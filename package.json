@@ -1,6 +1,6 @@
 {
   "name": "aspex-pilot-network",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Aspex Drone Services – pilot network management (records, CASA qualifications, messaging, job call-outs)",
   "main": "app.js",
   "private": true,
