@@ -139,7 +139,7 @@ ${q.expiresOn ? `<button formaction="/quals/${q.id}/remind" class="ghost">Email 
 <div class="head"><div><a href="/pilots" class="muted">← Pilots</a><h1>${esc(p.fullName)}</h1>
 <div class="sub">${esc(p.business)}${p.abn && !(p.business || '').replace(/\s/g, '').includes(p.abn.replace(/\s/g, '')) ? ' · ABN ' + esc(p.abn) : ''}</div></div>
 <div class="actions"><a class="btn" href="/messages/new?ids=${p.id}">Email ${esc(M.firstName(p))}</a>
-<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a></div></div>
+<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> <a class="btn ghost" href="#delete">Delete…</a></div></div>
 
 <section class="card"><h2>Pathway stage</h2>
 <form method="post" action="/pilots/${p.id}/stage" class="stages">${stageButtons}</form>
@@ -227,7 +227,9 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
     `<li><a href="/jobs/${job.id}"><b>${esc(job.title)}</b></a> · ${badge(r.assigned ? 'Assigned' : { interested: 'Interested', unavailable: 'Not available', invited: 'Invited' }[r.answer] || r.answer, r.assigned ? 'good' : r.answer === 'interested' ? 'good' : r.answer === 'unavailable' ? 'plain' : 'warn')}</li>`).join('') || '<li class="empty">None yet.</li>'}</ul></section>
 </div>
 
-<form method="post" action="/pilots/${p.id}/delete" class="danger-zone"><button class="link danger" data-confirm="Delete ${esc(p.fullName)} and all their records permanently?">Delete this pilot</button></form>`,
+<section class="card danger-zone" id="delete"><h2>Delete pilot</h2>
+<p class="sub">Removes ${esc(p.fullName)} and all their credentials, certificates, records and flight hours. This can't be undone. If they've just stopped working with you, set their stage to “Not proceeding” instead.</p>
+<form method="post" action="/pilots/${p.id}/delete"><button class="danger" data-confirm="Delete ${esc(p.fullName)} and all their records permanently?">Delete ${esc(p.fullName)}</button></form></section>`,
   }));
 });
 
