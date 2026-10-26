@@ -15,6 +15,11 @@ if (fs.existsSync(envFile)) {
 }
 
 const env = process.env;
+function hashOnce(pw) {
+  const crypto = require('crypto');
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `scrypt$${salt}$${crypto.scryptSync(pw, salt, 64).toString('hex')}`;
+}
 module.exports = {
   ROOT,
   port: Number(env.PORT || 3000),
@@ -24,7 +29,9 @@ module.exports = {
   uploadDir: env.UPLOAD_DIR || path.join(ROOT, 'data', 'uploads'),
   sessionSecret: env.SESSION_SECRET || 'change-me-' + ROOT,
   adminEmail: env.ADMIN_EMAIL || 'admin@aspex.com.au',
-  adminPasswordHash: env.ADMIN_PASSWORD_HASH || '',
+  // Either a hash made by `npm run set-password`, or a plain ADMIN_PASSWORD set as a
+  // secret in the hosting control panel (hashed here at start-up, never stored).
+  adminPasswordHash: env.ADMIN_PASSWORD_HASH || (env.ADMIN_PASSWORD ? hashOnce(env.ADMIN_PASSWORD) : ''),
   webhookSecret: env.WEBHOOK_SECRET || '',
   smtp: {
     host: env.SMTP_HOST || 'smtp.office365.com',
