@@ -21,6 +21,9 @@ app.use((req, res, next) => {
 });
 app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
+// Health check for the host: always answers 200 without needing a login.
+app.get('/health', (req, res) => res.type('text').send('ok'));
+
 // Public: login, website form webhook, pilots' job replies.
 app.use(main.publicRouter);
 app.use(comms.publicRouter);
