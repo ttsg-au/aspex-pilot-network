@@ -129,6 +129,9 @@ router.get('/import', (req, res) => {
 <label>ARN<input name="arn"></label>
 <div class="full"><button>Add pilot</button></div></form></section>
 </div>
+<section class="card"><h2>Import a file of registrations</h2>
+<p class="sub">Upload <code>seed-registrations.json</code> (the earlier sign-ups). Pilots already in the system (same email) are updated, not duplicated.</p>
+<form method="post" action="/import/file" enctype="multipart/form-data"><input type="file" name="file" accept=".json" required> <button>Import file</button></form></section>
 <section class="card"><h2>Connect the website form</h2>
 <p>New registrations can come straight in from the form on aspex.com.au. In WordPress, add a webhook to the pilot network form that posts to:</p>
 <pre>${esc(config.baseUrl)}/api/register?key=${config.webhookSecret ? esc(config.webhookSecret) : '&lt;WEBHOOK_SECRET from .env&gt;'}</pre>
@@ -140,6 +143,26 @@ router.post('/import/email', (req, res) => {
   if (!reg.email) return res.redirect('/import?msg=' + encodeURIComponent('Couldn’t find an “Email:” line in that text.'));
   const { pilot, isNew } = intake.upsertFromRegistration(reg, 'pasted email');
   res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(isNew ? 'Pilot added from the email.' : 'Existing pilot updated from the email.'));
+});
+// Upload of seed-registrations.json: [{ receivedAt, text, state? }, ...]
+const multer = require('multer');
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+router.post('/import/file', memUpload.single('file'), (req, res) => {
+  let list;
+  try { list = JSON.parse(req.file.buffer.toString('utf8')); } catch { list = null; }
+  if (!Array.isArray(list)) return res.redirect('/import?msg=' + encodeURIComponent('That file isn\u2019t a registrations file.'));
+  let added = 0, updated = 0;
+  for (const s of list) {
+    const reg = intake.parseNotificationEmail(s.text || '');
+    if (!reg.email) continue;
+    const { pilot, isNew } = intake.upsertFromRegistration(reg, 'website form (imported from email)');
+    if (isNew) {
+      added++;
+      const when = s.receivedAt && !isNaN(Date.parse(s.receivedAt)) ? new Date(s.receivedAt).toISOString() : pilot.registeredAt;
+      db.update('pilots', pilot.id, { registeredAt: when, ...(s.state && !pilot.state ? { state: s.state } : {}) });
+    } else updated++;
+  }
+  res.redirect('/pilots?msg=' + encodeURIComponent(`Imported: ${added} added, ${updated} updated.`));
 });
 router.post('/import/manual', (req, res) => {
   const { pilot, isNew } = intake.upsertFromRegistration({ ...req.body }, 'manual entry');
