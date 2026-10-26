@@ -1,0 +1,20 @@
+{
+  "name": "aspex-pilot-network",
+  "version": "1.0.0",
+  "description": "Aspex Drone Services – pilot network management (records, CASA qualifications, messaging, job call-outs)",
+  "main": "app.js",
+  "private": true,
+  "scripts": {
+    "start": "node app.js",
+    "set-password": "node scripts/set-password.js",
+    "import-seed": "node scripts/import-seed.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.2.1"
+  }
+}

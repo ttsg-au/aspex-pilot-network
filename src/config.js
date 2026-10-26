@@ -1,0 +1,40 @@
+// Loads settings from a .env file next to app.js (no extra packages needed).
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const envFile = path.join(ROOT, '.env');
+if (fs.existsSync(envFile)) {
+  for (const line of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (!m || line.trim().startsWith('#')) continue;
+    let v = m[2];
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+  }
+}
+
+const env = process.env;
+module.exports = {
+  ROOT,
+  port: Number(env.PORT || 3000),
+  // Public address of this app, used in email links (e.g. https://pilots.aspex.com.au)
+  baseUrl: (env.BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
+  uploadDir: env.UPLOAD_DIR || path.join(ROOT, 'data', 'uploads'),
+  sessionSecret: env.SESSION_SECRET || 'change-me-' + ROOT,
+  adminEmail: env.ADMIN_EMAIL || 'admin@aspex.com.au',
+  adminPasswordHash: env.ADMIN_PASSWORD_HASH || '',
+  webhookSecret: env.WEBHOOK_SECRET || '',
+  smtp: {
+    host: env.SMTP_HOST || 'smtp.office365.com',
+    port: Number(env.SMTP_PORT || 587),
+    user: env.SMTP_USER || '',
+    pass: env.SMTP_PASS || '',
+    from: env.MAIL_FROM || 'Aspex Drone Services <admin@aspex.com.au>',
+    replyTo: env.MAIL_REPLY_TO || 'admin@aspex.com.au',
+  },
+  // When true, emails are written to data/outbox instead of being sent (for testing).
+  mailDryRun: env.MAIL_DRY_RUN === 'true' || !env.SMTP_PASS,
+  expiryWarnDays: Number(env.EXPIRY_WARN_DAYS || 60),
+};
