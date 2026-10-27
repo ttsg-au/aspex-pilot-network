@@ -1,5 +1,12 @@
 # Aspex Pilot Network
 
+> **Records are stored in the hosting's MySQL database.** On GoDaddy app hosting the app's own
+> disk is wiped whenever the app restarts or redeploys, so the MySQL settings (`MYSQL_HOST`,
+> `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`, or a single `DATABASE_URL`) **must** be set
+> as secrets. The dashboard shows a red warning if they aren't. The app creates its own two
+> tables (`app_records`, `app_files`) the first time it connects. Certificate files are stored
+> in the database too. Use the **Backup** page to download a full copy now and then.
+
 The private admin system for the Aspex Drone Services National Pilot Network.
 
 - **Pilot records:** everything from the registration form, plus your own notes.

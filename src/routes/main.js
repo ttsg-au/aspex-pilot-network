@@ -72,6 +72,8 @@ router.get('/', (req, res) => {
 
   res.send(layout({ title: 'Dashboard', active: '/', flash: flashOf(req), body: `
 <div class="head"><h1>Dashboard</h1><div class="actions"><a class="btn" href="/messages/new">Message pilots</a> <a class="btn ghost" href="/jobs/new">New job</a></div></div>
+${db.mode() !== 'mysql' ? '<div class="flash bad"><b>Records are not being saved to a database.</b> On GoDaddy they will be lost the next time the app restarts. Add the MySQL settings to the app\u2019s secrets (see the README), then restart.</div>' : ''}
+${db.status().lastWriteError ? `<div class="flash bad"><b>The last save to the database failed</b> (${esc(db.status().lastWriteError.message)}). Download a backup from <a href="/backup">Backup</a> now.</div>` : ''}
 ${config.mailDryRun ? '<div class="flash warn">Test mode: emails are saved to data/outbox, not sent. Add the Microsoft 365 password (SMTP_PASS) in .env to send for real.</div>' : ''}
 <div class="stats">
 <a class="stat" href="/pilots"><b>${active.length}</b><span>Active pilots</span></a>
@@ -167,6 +169,34 @@ router.post('/import/file', memUpload.single('file'), (req, res) => {
 router.post('/import/manual', (req, res) => {
   const { pilot, isNew } = intake.upsertFromRegistration({ ...req.body }, 'manual entry');
   res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(isNew ? 'Pilot added.' : 'A pilot with that email already existed – updated.'));
+});
+
+// ---------- Backup and restore ----------
+router.get('/backup', (req, res) => {
+  const counts = Object.entries(db.exportAll()).map(([c, rows]) => `${c}: ${rows.length}`).join(' · ');
+  res.send(layout({ title: 'Backup', active: '/backup', flash: flashOf(req), body: `
+<div class="head"><h1>Backup</h1></div>
+<section class="card"><h2>Where your records are kept</h2>
+<p>${db.mode() === 'mysql' ? 'In the app\u2019s MySQL database. They survive restarts and updates.' : '<b class="bad">In a local file only. They will be lost when the app restarts on GoDaddy.</b>'}</p>
+<p class="sub">${esc(counts)}</p></section>
+<section class="card"><h2>Download a backup</h2>
+<p>A single file with every pilot, credential, record, flight, message and job. Certificate files themselves aren\u2019t included. Keep it somewhere safe; it contains pilots\u2019 personal details.</p>
+<a class="btn" href="/backup/download">Download backup</a></section>
+<section class="card"><h2>Restore from a backup</h2>
+<p class="sub">Adds back everything in the file. Records that already exist with the same ID are replaced by the backup\u2019s version; nothing else is deleted.</p>
+<form method="post" action="/backup/restore" enctype="multipart/form-data"><input type="file" name="file" accept=".json" required> <button data-confirm="Restore from this backup?">Restore</button></form></section>` }));
+});
+router.get('/backup/download', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="aspex-pilot-network-backup-${db.today()}.json"`);
+  res.send(JSON.stringify({ app: 'aspex-pilot-network', exportedAt: db.now(), ...db.exportAll() }, null, 1));
+});
+router.post('/backup/restore', memUpload.single('file'), async (req, res) => {
+  let saved;
+  try { saved = JSON.parse(req.file.buffer.toString('utf8')); } catch { saved = null; }
+  if (!saved || saved.app !== 'aspex-pilot-network') return res.redirect('/backup?msg=' + encodeURIComponent('That isn\u2019t a backup file from this app.'));
+  await db.importAll(saved);
+  res.redirect('/backup?msg=' + encodeURIComponent('Backup restored.'));
 });
 
 // ---------- Settings check ----------

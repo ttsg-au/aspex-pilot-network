@@ -1,8 +1,6 @@
 // Pilot list, pilot record, credentials, pathway records and flight hours.
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const multer = require('multer');
 const db = require('../db');
 const config = require('../config');
@@ -11,15 +9,19 @@ const V = require('../views');
 const { esc, nl2br, fmtDate, fmtDateTime, layout, options, badge, expiryBadge } = V;
 
 const router = express.Router();
-fs.mkdirSync(config.uploadDir, { recursive: true });
+// Certificates are kept in memory while uploading, then saved to the database.
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: config.uploadDir,
-    filename: (req, file, cb) => cb(null, crypto.randomBytes(10).toString('hex') + path.extname(file.originalname).toLowerCase().slice(0, 6)),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, /\.(pdf|jpe?g|png|heic|webp)$/i.test(file.originalname)),
 });
+const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+const mimeOf = (name) => MIME[path.extname(name).slice(1).toLowerCase()] || 'application/octet-stream';
+async function storeUpload(file) {
+  if (!file) return null;
+  const id = await db.saveFile(file.buffer, file.originalname, file.mimetype || mimeOf(file.originalname));
+  return { file: id, fileName: file.originalname };
+}
 
 const flashOf = (req) => req.query.msg ? String(req.query.msg) : '';
 const back = (res, url, msg) => res.redirect(url + (msg ? (url.includes('?') ? '&' : '?') + 'msg=' + encodeURIComponent(msg) : ''));
@@ -259,51 +261,52 @@ router.post('/pilots/:id/stage', (req, res) => {
 
 router.post('/pilots/:id/delete', (req, res) => {
   const id = req.params.id;
-  for (const q of M.qualsFor(id)) if (q.file) fs.rmSync(path.join(config.uploadDir, q.file), { force: true });
+  for (const q of M.qualsFor(id)) db.deleteFile(q.file);
   for (const c of ['qualifications', 'records', 'flightLogs', 'jobResponses']) db.removeWhere(c, r => r.pilotId === id);
   db.remove('pilots', id);
   back(res, '/pilots', 'Pilot deleted.');
 });
 
 // ---------- Credentials ----------
-function qualFields(b, file) {
+function qualFields(b, stored) {
   const f = {
     number: (b.number || '').trim(), detail: b.detail || '', issuedOn: b.issuedOn || '', expiresOn: b.expiresOn || '',
     note: b.note || '', verified: bool(b.verified),
   };
-  if (file) Object.assign(f, { file: file.filename, fileName: file.originalname });
+  if (stored) Object.assign(f, stored);
   return f;
 }
-router.post('/pilots/:id/quals', upload.single('file'), (req, res) => {
-  const f = qualFields(req.body, req.file);
+router.post('/pilots/:id/quals', upload.single('file'), async (req, res) => {
+  const f = qualFields(req.body, await storeUpload(req.file));
   if (f.verified) f.verifiedOn = db.today();
   db.insert('qualifications', { pilotId: req.params.id, type: req.body.type || 'other', ...f });
   back(res, `/pilots/${req.params.id}`, 'Credential added.');
 });
-router.post('/quals/:id', upload.single('file'), (req, res) => {
+router.post('/quals/:id', upload.single('file'), async (req, res) => {
   const q = db.get('qualifications', req.params.id);
   if (!q) return res.redirect('/pilots');
-  const f = qualFields(req.body, req.file);
+  const f = qualFields(req.body, await storeUpload(req.file));
   if (f.verified && !q.verified) f.verifiedOn = db.today();
   if (!f.verified) f.verifiedOn = '';
-  if (req.file && q.file) fs.rmSync(path.join(config.uploadDir, q.file), { force: true });
+  if (req.file && q.file) db.deleteFile(q.file);
   db.update('qualifications', q.id, f);
   back(res, `/pilots/${q.pilotId}`, 'Credential saved.');
 });
 router.post('/quals/:id/delete', (req, res) => {
   const q = db.get('qualifications', req.params.id);
   if (!q) return res.redirect('/pilots');
-  if (q.file) fs.rmSync(path.join(config.uploadDir, q.file), { force: true });
+  db.deleteFile(q.file);
   db.remove('qualifications', q.id);
   back(res, `/pilots/${q.pilotId}`, 'Credential deleted.');
 });
-router.get('/files/:name', (req, res) => {
+router.get('/files/:name', async (req, res) => {
   const name = path.basename(req.params.name);
   const q = db.all('qualifications').find(x => x.file === name);
-  const file = path.join(config.uploadDir, name);
-  if (!q || !fs.existsSync(file)) return res.status(404).send('Not found');
-  res.setHeader('Content-Disposition', `inline; filename="${(q.fileName || name).replace(/"/g, '')}"`);
-  res.sendFile(file);
+  const f = q && await db.readFile(name);
+  if (!f) return res.status(404).send('Not found');
+  res.setHeader('Content-Type', f.mime || mimeOf(q.fileName || ''));
+  res.setHeader('Content-Disposition', `inline; filename="${(q.fileName || name).replace(/[^\w.\- ]/g, '')}"`);
+  res.send(f.content);
 });
 
 // ---------- Records & flights ----------

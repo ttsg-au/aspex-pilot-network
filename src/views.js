@@ -14,7 +14,7 @@ function fmtDateTime(d) {
 }
 
 const NAV = [
-  ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/import', 'Add / import'],
+  ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/import', 'Add / import'], ['/backup', 'Backup'],
 ];
 
 function layout({ title, body, active = '', flash = '' }) {

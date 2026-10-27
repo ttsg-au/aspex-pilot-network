@@ -33,6 +33,23 @@ module.exports = {
   // secret in the hosting control panel (hashed here at start-up, never stored).
   adminPasswordHash: env.ADMIN_PASSWORD_HASH || (env.ADMIN_PASSWORD ? hashOnce(env.ADMIN_PASSWORD) : ''),
   webhookSecret: env.WEBHOOK_SECRET || '',
+  // Managed MySQL database (GoDaddy). Either one connection URL, or separate settings.
+  // Several common names are accepted so the values can be copied straight from the host.
+  mysql: (() => {
+    const pick = (...names) => names.map(n => env[n]).find(v => v !== undefined && v !== '') || '';
+    const url = pick('DATABASE_URL', 'MYSQL_URL', 'DB_URL');
+    const host = pick('MYSQL_HOST', 'DB_HOST', 'DATABASE_HOST');
+    return {
+      url,
+      host,
+      port: Number(pick('MYSQL_PORT', 'DB_PORT', 'DATABASE_PORT') || 3306),
+      user: pick('MYSQL_USER', 'DB_USER', 'DB_USERNAME', 'DATABASE_USER', 'DATABASE_USERNAME'),
+      password: pick('MYSQL_PASSWORD', 'DB_PASSWORD', 'DB_PASS', 'DATABASE_PASSWORD'),
+      database: pick('MYSQL_DATABASE', 'DB_NAME', 'DB_DATABASE', 'DATABASE_NAME'),
+      ssl: pick('MYSQL_SSL', 'DB_SSL') === 'true',
+      configured: !!(url || host),
+    };
+  })(),
   smtp: {
     host: env.SMTP_HOST || 'smtp.office365.com',
     port: Number(env.SMTP_PORT || 587),
