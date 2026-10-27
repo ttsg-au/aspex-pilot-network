@@ -134,6 +134,9 @@ router.get('/import', (req, res) => {
 <section class="card"><h2>Import a file of registrations</h2>
 <p class="sub">Upload <code>seed-registrations.json</code> (the earlier sign-ups). Pilots already in the system (same email) are updated, not duplicated.</p>
 <form method="post" action="/import/file" enctype="multipart/form-data"><input type="file" name="file" accept=".json" required> <button>Import file</button></form></section>
+<section class="card"><h2>Import credentials</h2>
+<p class="sub">Upload a credentials file (prepared from pilots' emailed documents). It adds each document to the right pilot, fills in numbers and dates, and ticks it verified. Pilots are matched by email address; nothing is deleted.</p>
+<form method="post" action="/import/credentials" enctype="multipart/form-data"><input type="file" name="file" accept=".json" required> <button>Import credentials</button></form></section>
 <section class="card"><h2>Connect the website form</h2>
 <p>New registrations can come straight in from the form on aspex.com.au. In WordPress, add a webhook to the pilot network form that posts to:</p>
 <pre>${esc(config.baseUrl)}/api/register?key=${config.webhookSecret ? esc(config.webhookSecret) : '&lt;WEBHOOK_SECRET from .env&gt;'}</pre>
@@ -169,6 +172,54 @@ router.post('/import/file', memUpload.single('file'), (req, res) => {
 router.post('/import/manual', (req, res) => {
   const { pilot, isNew } = intake.upsertFromRegistration({ ...req.body }, 'manual entry');
   res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(isNew ? 'Pilot added.' : 'A pilot with that email already existed – updated.'));
+});
+
+// ---------- Import credentials (documents received by email) ----------
+// File shape: { app: 'aspex-pilot-network-credentials', pilots: [ { email, set: {...pilot fields},
+//   record: 'note text', credentials: [ { type, number, detail, issuedOn, expiresOn, verified, note,
+//   file: { name, mime, base64 } } ] } ] }
+const bigUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 40 * 1024 * 1024 } });
+const PILOT_FIELDS = ['homeBase', 'state', 'region', 'phoneType', 'fullName', 'mobile', 'business', 'abn', 'travel'];
+router.post('/import/credentials', bigUpload.single('file'), async (req, res) => {
+  let bundle;
+  try { bundle = JSON.parse(req.file.buffer.toString('utf8')); } catch { bundle = null; }
+  if (!bundle || bundle.app !== 'aspex-pilot-network-credentials' || !Array.isArray(bundle.pilots)) {
+    return res.redirect('/import?msg=' + encodeURIComponent('That isn\u2019t a credentials file.'));
+  }
+  const report = [];
+  for (const entry of bundle.pilots) {
+    const pilot = db.all('pilots').find(p => (p.email || '').toLowerCase() === String(entry.email || '').toLowerCase());
+    if (!pilot) { report.push(`${entry.email}: no pilot with this email – skipped`); continue; }
+    const set = {};
+    for (const k of PILOT_FIELDS) if (entry.set && entry.set[k] !== undefined) set[k] = entry.set[k];
+    if (Object.keys(set).length) db.update('pilots', pilot.id, set);
+    let added = 0, updated = 0;
+    for (const c of entry.credentials || []) {
+      let stored = null;
+      if (c.file && c.file.base64) {
+        const id = await db.saveFile(Buffer.from(c.file.base64, 'base64'), c.file.name || 'certificate', c.file.mime || 'application/octet-stream');
+        stored = { file: id, fileName: c.file.name || 'certificate' };
+      }
+      const fields = {};
+      for (const k of ['number', 'detail', 'issuedOn', 'expiresOn', 'note']) if (c[k] !== undefined) fields[k] = c[k];
+      if (c.verified) { fields.verified = true; fields.verifiedOn = db.today(); }
+      if (stored) Object.assign(fields, stored);
+      // Update the matching credential if there is one (same type, and same number if both have one); otherwise add it.
+      const existing = db.where('qualifications', q => q.pilotId === pilot.id && q.type === c.type)
+        .find(q => !q.number || !c.number || q.number.replace(/\s/g, '') === String(c.number).replace(/\s/g, ''));
+      if (existing) {
+        if (stored && existing.file) db.deleteFile(existing.file);
+        db.update('qualifications', existing.id, fields); updated++;
+      } else {
+        db.insert('qualifications', { pilotId: pilot.id, type: c.type || 'other', number: '', detail: '', issuedOn: '', expiresOn: '', verified: false, file: null, note: '', ...fields });
+        added++;
+      }
+    }
+    if (entry.record && !db.all('records').some(r => r.pilotId === pilot.id && r.text === entry.record)) db.insert('records', { pilotId: pilot.id, type: 'note', date: db.today(), by: 'Kimberly Olsen', text: entry.record });
+    report.push(`${pilot.fullName}: ${updated} updated, ${added} added`);
+  }
+  await db.flush();
+  res.redirect('/pilots?msg=' + encodeURIComponent('Credentials imported – ' + report.join('; ')));
 });
 
 // ---------- Backup and restore ----------

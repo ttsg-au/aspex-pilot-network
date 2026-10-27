@@ -87,7 +87,7 @@ ${pilotRowsTable(list)}`,
 
 router.get('/pilots.csv', (req, res) => {
   const list = M.filterPilots(req.query);
-  const cols = ['fullName', 'email', 'mobile', 'business', 'abn', 'homeBase', 'state', 'region', 'travel', 'partA', 'partB', 'stage', 'drones', 'dronesOther', 'insuranceStatus', 'coverAmount', 'whiteCard', 'registeredAt'];
+  const cols = ['fullName', 'email', 'mobile', 'phoneType', 'business', 'abn', 'homeBase', 'state', 'region', 'travel', 'partA', 'partB', 'stage', 'drones', 'dronesOther', 'insuranceStatus', 'coverAmount', 'whiteCard', 'registeredAt'];
   const cell = (v) => `"${String(Array.isArray(v) ? v.join('; ') : v ?? '').replace(/"/g, '""')}"`;
   const rows = [cols.join(',') + ',credentials,flightHours'].concat(list.map(p =>
     cols.map(c => cell(c === 'stage' ? M.stageLabel(p.stage) : p[c])).join(',') + ',' +
@@ -200,6 +200,7 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
 <label>Full name<input name="fullName" value="${esc(p.fullName)}" required></label>
 <label>Email<input type="email" name="email" value="${esc(p.email)}" required></label>
 <label>Mobile<input name="mobile" value="${esc(p.mobile)}"></label>
+<label>Main phone<select name="phoneType">${options(['iPhone', 'Android', 'Other'], p.phoneType, { blank: 'Not known' })}</select></label>
 <label>Business<input name="business" value="${esc(p.business)}"></label>
 <label>ABN<input name="abn" value="${esc(p.abn)}"></label>
 <label>Portfolio / website<input name="portfolio" value="${esc(p.portfolio)}"></label>
@@ -241,7 +242,7 @@ router.post('/pilots/:id', (req, res) => {
   db.update('pilots', req.params.id, {
     fullName: b.fullName, email: (b.email || '').toLowerCase().trim(), mobile: b.mobile, business: b.business, abn: b.abn,
     portfolio: b.portfolio, homeBase: b.homeBase, state: b.state, region: b.region, travel: b.travel,
-    partA: bool(b.partA), partB: bool(b.partB), drones, dronesOther: b.dronesOther,
+    partA: bool(b.partA), partB: bool(b.partB), drones, dronesOther: b.dronesOther, phoneType: b.phoneType || '',
     insuranceStatus: b.insuranceStatus, coverAmount: b.coverAmount, whiteCard: b.whiteCard,
     experience: b.experience, goals: b.goals, notes: b.notes,
   });
