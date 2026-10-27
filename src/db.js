@@ -43,12 +43,13 @@ function fileSave() {
 async function mysqlInit() {
   const mysql = require('mysql2/promise');
   const m = config.mysql;
+  // Small pool; idle connections are closed after a minute (the host prefers short-lived
+  // connections), and new ones are opened as needed.
+  const opts = { connectionLimit: 4, maxIdle: 1, idleTimeout: 60000, enableKeepAlive: true,
+    ...(m.ssl ? { ssl: { rejectUnauthorized: false } } : {}) };
   pool = m.url
-    ? mysql.createPool({ uri: m.url, connectionLimit: 4, ...(m.ssl ? { ssl: { rejectUnauthorized: false } } : {}) })
-    : mysql.createPool({
-      host: m.host, port: m.port, user: m.user, password: m.password, database: m.database,
-      connectionLimit: 4, ...(m.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
-    });
+    ? mysql.createPool({ uri: m.url, ...opts })
+    : mysql.createPool({ host: m.host, port: m.port, user: m.user, password: m.password, database: m.database, ...opts });
   await pool.query(`CREATE TABLE IF NOT EXISTS app_records (
     collection VARCHAR(40) NOT NULL,
     id VARCHAR(40) NOT NULL,
