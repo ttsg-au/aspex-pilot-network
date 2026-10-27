@@ -59,6 +59,19 @@ module.exports = {
     replyTo: env.MAIL_REPLY_TO || 'admin@aspex.com.au',
   },
   // When true, emails are written to data/outbox instead of being sent (for testing).
-  mailDryRun: env.MAIL_DRY_RUN === 'true' || !env.SMTP_PASS,
+  // Microsoft Graph sending (preferred: works over HTTPS where email ports are blocked).
+  graph: (() => {
+    const pick = (...names) => names.map(n => env[n]).find(v => v) || '';
+    const tenantId = pick('MS_TENANT_ID', 'GRAPH_TENANT_ID', 'AZURE_TENANT_ID');
+    const clientId = pick('MS_CLIENT_ID', 'GRAPH_CLIENT_ID', 'AZURE_CLIENT_ID');
+    const clientSecret = pick('MS_CLIENT_SECRET', 'GRAPH_CLIENT_SECRET', 'AZURE_CLIENT_SECRET');
+    return {
+      tenantId, clientId, clientSecret,
+      configured: !!(tenantId && clientId && clientSecret),
+      loginBase: env.GRAPH_LOGIN_BASE || 'https://login.microsoftonline.com',
+      apiBase: env.GRAPH_API_BASE || 'https://graph.microsoft.com',
+    };
+  })(),
+  get mailDryRun() { return !this.graph.configured && !this.smtp.pass; },
   expiryWarnDays: Number(env.EXPIRY_WARN_DAYS || 60),
 };

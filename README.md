@@ -63,22 +63,37 @@ To update the app later, upload the new files over the old ones without touching
 
 ## 2. Sending email from admin@aspex.com.au (Microsoft 365)
 
-The app sends through Microsoft 365's mail server (`smtp.office365.com`, port 587) while logged in as admin@aspex.com.au. If Learn to Tow already sends this way, use the same kind of password here.
+GoDaddy's app hosting blocks outgoing email ports, so plain SMTP (`smtp.office365.com:587`) fails with
+"Couldn't connect to the mail server". Use **Microsoft Graph** instead: it sends from the same mailbox,
+over normal HTTPS, and the emails appear in your Sent Items.
 
-1. In `.env`:
-   ```
-   SMTP_USER=admin@aspex.com.au
-   SMTP_PASS=<the mailbox password, or an app password>
-   ```
-2. Microsoft must allow this mailbox to send by SMTP:
-   - Go to **Microsoft 365 admin centre → Users → Active users → admin@aspex.com.au → Mail → Manage email apps**.
-   - Tick **Authenticated SMTP**.
-   - If the account uses two-step sign-in, create an **app password** and use that as `SMTP_PASS`.
-3. Restart the app. While logged in, open `/settings/test-email`. It checks the connection and sends you a test email.
+**One-off setup in Microsoft Entra (about 10 minutes, as a Microsoft 365 admin):**
 
-Until `SMTP_PASS` is filled in, the app is in **test mode**: emails are saved to `data/outbox/` instead of being sent, and a yellow banner says so.
+1. Go to **entra.microsoft.com → Applications → App registrations → New registration**.
+   Name it `Aspex Pilot Network`, leave "Single tenant" selected, no redirect URI. Click **Register**.
+2. On the app's **Overview** page, copy the **Application (client) ID** and the **Directory (tenant) ID**.
+3. **Certificates & secrets → Client secrets → New client secret.** Pick 24 months. Copy the **Value**
+   straight away (it's only shown once). Put a reminder in your calendar to renew it before it expires.
+4. **API permissions → Add a permission → Microsoft Graph → Application permissions → Mail.Send → Add.**
+   Then click **Grant admin consent for …** and confirm. The status should show a green tick.
+5. In GoDaddy, add three secrets to the app:
+   - `MS_TENANT_ID` = Directory (tenant) ID
+   - `MS_CLIENT_ID` = Application (client) ID
+   - `MS_CLIENT_SECRET` = the secret Value
+6. Update Preview → Publish to Live, then open `/settings/test-email` in the app. It signs in to Microsoft
+   and sends you a test email.
 
-Microsoft 365 allows about 30 emails a minute from one mailbox, so group emails are sent at about one every two seconds. The message page refreshes to show progress.
+By default the Mail.Send permission lets this app send as any mailbox in your Microsoft 365 organisation.
+The app only ever sends as the address in `MAIL_FROM` (admin@aspex.com.au). If you have other staff
+mailboxes, you can restrict the app to that one mailbox with an Exchange *application access policy*.
+
+If a send fails, the message page shows the reason and a **Resend to the … that failed** button.
+
+Until Graph (or SMTP) is set up, the app is in **test mode**: emails are saved to `data/outbox/` instead of
+being sent, and a yellow banner says so.
+
+Microsoft 365 allows about 30 emails a minute from one mailbox, so group emails are sent about one every
+two seconds. The message page refreshes to show progress.
 
 ## 3. Feeding new registrations in from the website
 

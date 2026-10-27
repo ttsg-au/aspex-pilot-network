@@ -74,7 +74,7 @@ router.get('/', (req, res) => {
 <div class="head"><h1>Dashboard</h1><div class="actions"><a class="btn" href="/messages/new">Message pilots</a> <a class="btn ghost" href="/jobs/new">New job</a></div></div>
 ${db.mode() !== 'mysql' ? '<div class="flash bad"><b>Records are not being saved to a database.</b> On GoDaddy they will be lost the next time the app restarts. Add the MySQL settings to the app\u2019s secrets (see the README), then restart.</div>' : ''}
 ${db.status().lastWriteError ? `<div class="flash bad"><b>The last save to the database failed</b> (${esc(db.status().lastWriteError.message)}). Download a backup from <a href="/backup">Backup</a> now.</div>` : ''}
-${config.mailDryRun ? '<div class="flash warn">Test mode: emails are saved to data/outbox, not sent. Add the Microsoft 365 password (SMTP_PASS) in .env to send for real.</div>' : ''}
+${config.mailDryRun ? '<div class="flash warn">Test mode: emails are saved to data/outbox, not sent. Set up Microsoft Graph sending (see README) to send for real.</div>' : ''}
 <div class="stats">
 <a class="stat" href="/pilots"><b>${active.length}</b><span>Active pilots</span></a>
 <a class="stat" href="/pilots?stage=registered"><b>${newOnes.length}</b><span>New, not contacted</span></a>

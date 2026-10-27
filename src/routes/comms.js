@@ -61,21 +61,33 @@ Aspex Drone Services` },
 ];
 
 // ---------- Sending ----------
-function startSend({ subject, body, pilots, kind = 'message', jobId = null, buttonsFor = null }) {
-  const msg = db.insert('messages', {
-    subject, body, kind, jobId,
-    recipients: pilots.map(p => ({ pilotId: p.id, name: p.fullName, email: p.email, status: 'queued' })),
-  });
+// Buttons for a job call-out email ("I'm interested" / "Not available"), unique to each pilot.
+function jobButtons(jobId, p) {
+  const link = (a) => `${config.baseUrl}/r/${jobId}/${p.id}/${a}/${auth.linkToken(jobId, p.id)}`;
+  return [{ label: 'I\u2019m interested', url: link('interested'), primary: true }, { label: 'Not available', url: link('unavailable') }];
+}
+
+// Send (or re-send) a saved message to some of its recipients, recording each result.
+function deliver(msg, pilots) {
+  const buttonsFor = msg.kind === 'job' && msg.jobId ? (p) => jobButtons(msg.jobId, p) : () => [];
   const items = pilots.map(p => ({
-    pilotId: p.id, to: p.email, subject: merge(subject, p), text: merge(body, p),
-    buttons: buttonsFor ? buttonsFor(p) : [],
+    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p),
   }));
   mail.sendBatch(items, (item, ok, err) => {
     const m = db.get('messages', msg.id);
     const r = m.recipients.find(x => x.pilotId === item.pilotId);
-    Object.assign(r, ok ? { status: 'sent', sentAt: db.now() } : { status: 'failed', error: String(err && err.message || err) });
+    if (ok) Object.assign(r, { status: 'sent', sentAt: db.now(), error: '' });
+    else Object.assign(r, { status: 'failed', error: String((err && err.message) || err), failedAt: db.now() });
     db.update('messages', m.id, { recipients: m.recipients });
   });
+}
+
+function startSend({ subject, body, pilots, kind = 'message', jobId = null }) {
+  const msg = db.insert('messages', {
+    subject, body, kind, jobId,
+    recipients: pilots.map(p => ({ pilotId: p.id, name: p.fullName, email: p.email, status: 'queued' })),
+  });
+  deliver(msg, pilots);
   return msg;
 }
 
@@ -84,7 +96,7 @@ router.get('/messages', (req, res) => {
   const list = db.all('messages').slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.send(layout({ title: 'Messages', active: '/messages', flash: flashOf(req), body: `
 <div class="head"><h1>Messages</h1><div class="actions"><a class="btn" href="/messages/new">New message</a></div></div>
-${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved to data/outbox, not sent. Add SMTP_PASS in .env to send for real.</div>' : ''}
+${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved to data/outbox, not sent. Set up Microsoft Graph sending (see README) to send for real.</div>' : ''}
 <div class="tablewrap"><table class="list"><thead><tr><th>Subject</th><th>Type</th><th>To</th><th>Sent</th><th>Status</th></tr></thead><tbody>
 ${list.map(m => {
     const sent = m.recipients.filter(r => r.status === 'sent').length, failed = m.recipients.filter(r => r.status === 'failed').length;
@@ -137,7 +149,20 @@ ${pending ? '<meta http-equiv="refresh" content="4">' : ''}
 <div class="cols"><section class="card"><h2>Message</h2><div class="msgbody">${nl2br(m.body)}</div></section>
 <section class="card"><h2>Recipients</h2><table class="list compact"><tbody>${m.recipients.map(r => `<tr><td><a href="/pilots/${r.pilotId}">${esc(r.name)}</a><div class="sub">${esc(r.email)}</div></td>
 <td>${badge(r.status, r.status === 'sent' ? 'good' : r.status === 'failed' ? 'bad' : 'warn')}${r.error ? `<div class="sub bad">${esc(r.error)}</div>` : ''}</td></tr>`).join('')}</tbody></table>
-${pending ? '<p class="sub">Sending… this page refreshes itself.</p>' : ''}</section></div>` }));
+${pending ? '<p class="sub">Sending… this page refreshes itself.</p>' : ''}
+${!pending && m.recipients.some(r => r.status === 'failed') ? `<form method="post" action="/messages/${m.id}/resend"><button>Resend to the ${m.recipients.filter(r => r.status === 'failed').length} that failed</button></form>
+<p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (not sent)' }[mail.method()]}. <a href="/settings/test-email">Test email settings</a></p>` : ''}</section></div>` }));
+});
+
+router.post('/messages/:id/resend', (req, res) => {
+  const m = db.get('messages', req.params.id);
+  if (!m) return res.redirect('/messages');
+  const failed = m.recipients.filter(r => r.status === 'failed');
+  const pilots = failed.map(r => db.get('pilots', r.pilotId)).filter(Boolean);
+  for (const r of failed) if (pilots.some(p => p.id === r.pilotId)) Object.assign(r, { status: 'queued', error: '' });
+  db.update('messages', m.id, { recipients: m.recipients });
+  deliver(m, pilots);
+  res.redirect(`/messages/${m.id}?msg=` + encodeURIComponent(`Resending to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}…`));
 });
 
 // ---------- Renewal reminder for one credential ----------
@@ -328,11 +353,7 @@ router.post('/jobs/:id/send', (req, res) => {
     if (!existing) db.insert('jobResponses', { jobId: j.id, pilotId: p.id, answer: 'invited', invitedAt: db.now(), assigned: false, note: '' });
   }
   const body = (req.body.intro || '') + '\n\n' + jobSummary(j) + '\n\nKind regards,\nKimberly Olsen\nAspex Drone Services';
-  const link = (p, a) => `${config.baseUrl}/r/${j.id}/${p.id}/${a}/${auth.linkToken(j.id, p.id)}`;
-  startSend({
-    kind: 'job', jobId: j.id, pilots, subject: req.body.subject || 'Job available: ' + j.title, body,
-    buttonsFor: (p) => [{ label: 'I’m interested', url: link(p, 'interested'), primary: true }, { label: 'Not available', url: link(p, 'unavailable') }],
-  });
+  startSend({ kind: 'job', jobId: j.id, pilots, subject: req.body.subject || 'Job available: ' + j.title, body });
   res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent(`Job sent to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}.`));
 });
 
