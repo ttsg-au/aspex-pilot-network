@@ -72,7 +72,8 @@ module.exports = {
     const clientSecret = pick('MS_CLIENT_SECRET', 'GRAPH_CLIENT_SECRET', 'AZURE_CLIENT_SECRET', 'CLIENT_SECRET', 'CLIENT_SECRET_VALUE', 'SECRET_VALUE', 'MS_SECRET');
     return {
       tenantId, clientId, clientSecret,
-      configured: !!(tenantId && clientId && clientSecret),
+      sendTenant: pick('MS_SEND_TENANT', 'MAILBOX_TENANT'),
+      configured: !!(clientId && clientSecret),
       found: { tenantId: !!tenantId, clientId: !!clientId, clientSecret: !!clientSecret },
       loginBase: env.GRAPH_LOGIN_BASE || 'https://login.microsoftonline.com',
       apiBase: env.GRAPH_API_BASE || 'https://graph.microsoft.com',

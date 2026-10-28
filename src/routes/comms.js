@@ -95,7 +95,7 @@ function startSend({ subject, body, pilots, kind = 'message', jobId = null }) {
 router.get('/messages', (req, res) => {
   const list = db.all('messages').slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.send(layout({ title: 'Messages', active: '/messages', flash: flashOf(req), body: `
-<div class="head"><h1>Messages</h1><div class="actions"><a class="btn ghost" href="/settings/test-email" title="Sends a test email to ${esc(config.adminEmail)}">Send test email to myself</a> <a class="btn" href="/messages/new">New message</a></div></div>
+<div class="head"><h1>Messages</h1><div class="actions"><a class="btn ghost" href="/settings/email">Email settings</a> <a class="btn" href="/messages/new">New message</a></div></div>
 <p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (emails are not sent)' }[mail.method()]}
 ${mail.method() !== 'graph' ? ` · Microsoft Graph settings found: tenant ID ${config.graph.found.tenantId ? '✓' : '✗'}, client ID ${config.graph.found.clientId ? '✓' : '✗'}, client secret ${config.graph.found.clientSecret ? '✓' : '✗'}` : ''}</p>
 ${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved to data/outbox, not sent. Set up Microsoft Graph sending (see README) to send for real.</div>' : ''}
@@ -153,7 +153,7 @@ ${pending ? '<meta http-equiv="refresh" content="4">' : ''}
 <td>${badge(r.status, r.status === 'sent' ? 'good' : r.status === 'failed' ? 'bad' : 'warn')}${r.error ? `<div class="sub bad">${esc(r.error)}</div>` : ''}</td></tr>`).join('')}</tbody></table>
 ${pending ? '<p class="sub">Sending… this page refreshes itself.</p>' : ''}
 ${!pending && m.recipients.some(r => r.status === 'failed') ? `<form method="post" action="/messages/${m.id}/resend"><button>Resend to the ${m.recipients.filter(r => r.status === 'failed').length} that failed</button></form>
-<p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (not sent)' }[mail.method()]}. <a href="/settings/test-email">Test email settings</a></p>` : ''}</section></div>` }));
+<p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (not sent)' }[mail.method()]}. <a href="/settings/email">Email settings</a></p>` : ''}</section></div>` }));
 });
 
 router.post('/messages/:id/resend', (req, res) => {

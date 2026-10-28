@@ -33,11 +33,22 @@ function getTransport() {
 }
 
 // ---------- Microsoft Graph ----------
-let token = null; // { value, expires }
+// The app signs in to the Microsoft organisation that owns the sending mailbox. By default that's
+// worked out from the From address's domain (e.g. aspex.com.au), so the app registration can live
+// in a different organisation: it only needs approving once in the mailbox's organisation
+// (the "Approve" button on the Email settings page). MS_SEND_TENANT overrides this.
+const addressOf = (s) => (String(s).match(/<([^>]+)>/) || [null, s])[1].trim();
+const fromAddress = () => addressOf(config.smtp.from);
+const sendTenant = () => config.graph.sendTenant || fromAddress().split('@')[1] || config.graph.tenantId;
+const consentUrl = () => `https://login.microsoftonline.com/${encodeURIComponent(sendTenant())}/adminconsent?client_id=${encodeURIComponent(config.graph.clientId)}`;
+
+const tokens = {}; // tenant -> { value, expires }
 async function graphToken() {
-  if (token && token.expires > Date.now() + 60e3) return token.value;
+  const tenant = sendTenant();
+  const t = tokens[tenant];
+  if (t && t.expires > Date.now() + 60e3) return t.value;
   const g = config.graph;
-  const res = await fetch(`${g.loginBase}/${encodeURIComponent(g.tenantId)}/oauth2/v2.0/token`, {
+  const res = await fetch(`${g.loginBase}/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -46,13 +57,21 @@ async function graphToken() {
     }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Microsoft sign-in failed: ${body.error_description || body.error || res.status}`);
-  token = { value: body.access_token, expires: Date.now() + (body.expires_in || 3600) * 1000 };
-  return token.value;
+  if (!res.ok) {
+    const d = body.error_description || body.error || String(res.status);
+    // App not yet approved in the mailbox's organisation.
+    if (/AADSTS700016|AADSTS650052|AADSTS65001|AADSTS7000229|not found in the directory/i.test(d)) {
+      const e = new Error(`The app hasn't been approved for ${tenant} yet. On the Email settings page, click "Approve for ${tenant}" and sign in as an admin of ${tenant}.`);
+      e.needsConsent = true;
+      throw e;
+    }
+    throw new Error(`Microsoft sign-in failed: ${d}`);
+  }
+  tokens[tenant] = { value: body.access_token, expires: Date.now() + (body.expires_in || 3600) * 1000 };
+  return body.access_token;
 }
-const addressOf = (s) => (String(s).match(/<([^>]+)>/) || [null, s])[1].trim();
 async function graphSend(msg) {
-  const from = addressOf(config.smtp.from);
+  const from = fromAddress();
   const res = await fetch(`${config.graph.apiBase}/v1.0/users/${encodeURIComponent(from)}/sendMail`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await graphToken()}`, 'Content-Type': 'application/json' },
@@ -69,6 +88,13 @@ async function graphSend(msg) {
   if (res.status === 202 || res.ok) return { graph: true };
   const body = await res.json().catch(() => ({}));
   const e = body.error || {};
+  if (e.code === 'ErrorInvalidUser' || res.status === 404) {
+    throw new Error(`Microsoft couldn't find the mailbox ${from} in ${sendTenant()}. Check MAIL_FROM is the right address.`);
+  }
+  if (res.status === 403) {
+    const err = new Error(`Microsoft refused permission to send as ${from}. On the Email settings page, click "Approve for ${sendTenant()}" and accept.`);
+    err.needsConsent = true; throw err;
+  }
   throw new Error(`Microsoft rejected the email (${res.status} ${e.code || ''}): ${e.message || 'no details'}`);
 }
 
@@ -128,6 +154,7 @@ async function send({ to, subject, text, buttons = [] }) {
     const info = await getTransport().sendMail(msg);
     return { messageId: info.messageId };
   } catch (e) {
+    if (m === 'graph') throw e; // Graph errors are already in plain words
     const wrapped = new Error(describeError(e));
     wrapped.cause = e;
     throw wrapped;
@@ -147,7 +174,7 @@ async function sendBatch(items, onEach) {
     try { onEach(item, await send(item), null); }
     catch (e) {
       onEach(item, null, e);
-      if (/Couldn't connect|refused the login|sign-in failed/.test(e.message)) fatal = e;
+      if (/Couldn't connect|refused the login|sign-in failed|hasn't been approved|refused permission|couldn't find the mailbox/.test(e.message)) fatal = e;
     }
     if (paceMs()) await sleep(paceMs());
   }
@@ -156,9 +183,9 @@ async function sendBatch(items, onEach) {
 async function verify() {
   const m = method();
   if (m === 'test') return 'Test mode: emails are saved to data/outbox, not sent (no Microsoft Graph or SMTP settings).';
-  if (m === 'graph') { await graphToken(); return `Signed in to Microsoft Graph; sending as ${addressOf(config.smtp.from)}.`; }
+  if (m === 'graph') { await graphToken(); return `Signed in to Microsoft (${sendTenant()}); sending as ${fromAddress()}.`; }
   try { await getTransport().verify(); } catch (e) { throw new Error(describeError(e)); }
   return `Connected to ${config.smtp.host} as ${config.smtp.user}.`;
 }
 
-module.exports = { send, sendBatch, verify, toHtml, method, describeError };
+module.exports = { send, sendBatch, verify, toHtml, method, describeError, sendTenant, consentUrl, fromAddress };

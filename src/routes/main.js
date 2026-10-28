@@ -250,14 +250,39 @@ router.post('/backup/restore', memUpload.single('file'), async (req, res) => {
   res.redirect('/backup?msg=' + encodeURIComponent('Backup restored.'));
 });
 
-// ---------- Settings check ----------
+// ---------- Email settings ----------
+router.get('/settings/email', (req, res) => {
+  const m = mail.method();
+  const g = config.graph;
+  const tick = (ok) => ok ? '<span class="okline">✓</span>' : '<span class="bad">✗ missing</span>';
+  res.send(layout({ title: 'Email settings', active: '/messages', flash: flashOf(req), body: `
+<div class="head"><div><a href="/messages" class="muted">← Messages</a><h1>Email settings</h1></div></div>
+<section class="card"><h2>How emails are sent</h2>
+<p>${{ graph: 'Through <b>Microsoft Graph</b> (Microsoft 365, over HTTPS).', smtp: 'Through SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + '). GoDaddy blocks this port, so it won\u2019t work there.', test: '<b>Test mode</b>: emails are saved, not sent.' }[m]}</p>
+<p>Sending as <b>${esc(mail.fromAddress())}</b>.</p>
+<p><a class="btn" href="/settings/test-email">Send test email to myself</a></p></section>
+${m === 'graph' ? `<section class="card"><h2>Microsoft approval</h2>
+<p>The app signs in to the Microsoft organisation that owns <b>${esc(mail.fromAddress())}</b> (<b>${esc(mail.sendTenant())}</b>). It needs approving there once.</p>
+<ol>
+<li>Click the button below. It opens Microsoft in a new tab.</li>
+<li>Sign in as <b>${esc(mail.fromAddress())}</b> (or another admin of ${esc(mail.sendTenant())}) if asked.</li>
+<li>Click <b>Accept</b>. If Microsoft then shows a page about a missing "reply address", that's expected – close the tab.</li>
+<li>Come back here and click <b>Send test email to myself</b>.</li>
+</ol>
+<p><a class="btn" href="${esc(mail.consentUrl())}" target="_blank" rel="noopener">Approve for ${esc(mail.sendTenant())}</a></p>
+<p class="sub">If the test still says it isn\u2019t approved, wait a minute and try again – Microsoft can take a moment to catch up.</p></section>` : ''}
+<section class="card"><h2>Microsoft Graph settings found</h2>
+<p>Client ID ${tick(g.found.clientId)} · Client secret ${tick(g.found.clientSecret)}${g.clientId ? ` · <span class="sub">Client ID: ${esc(g.clientId)}</span>` : ''}</p>
+<p class="sub">The client secret expires (usually after 24 months). When it does, create a new one under the app registration's Certificates &amp; secrets and replace MS_CLIENT_SECRET in GoDaddy.</p></section>` }));
+});
+
 router.get('/settings/test-email', async (req, res) => {
   try {
     const status = await mail.verify();
     await mail.send({ to: config.adminEmail, subject: 'Aspex Pilot Network – test email', text: 'If you can read this, sending from the pilot network app works.' });
-    res.redirect('/?msg=' + encodeURIComponent(status + ' Test email sent to ' + config.adminEmail + '.'));
+    res.redirect('/settings/email?msg=' + encodeURIComponent(status + ' Test email sent to ' + config.adminEmail + '.'));
   } catch (e) {
-    res.redirect('/?msg=' + encodeURIComponent('Email test failed: ' + e.message));
+    res.redirect('/settings/email?msg=' + encodeURIComponent('Email test failed: ' + e.message));
   }
 });
 

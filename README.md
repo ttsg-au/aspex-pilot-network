@@ -80,8 +80,14 @@ over normal HTTPS, and the emails appear in your Sent Items.
    - `MS_TENANT_ID` = Directory (tenant) ID
    - `MS_CLIENT_ID` = Application (client) ID
    - `MS_CLIENT_SECRET` = the secret Value
-6. Update Preview → Publish to Live, then open `/settings/test-email` in the app. It signs in to Microsoft
-   and sends you a test email.
+6. Update Preview → Publish to Live, then open **Messages → Email settings** in the app and click
+   **Send test email to myself**.
+
+**If the app registration is in a different Microsoft organisation from the mailbox** (e.g. registered under
+SkySpec, mailbox in Aspex): set the app registration's *Supported accounts* to **Multiple Entra ID tenants →
+Allow all tenants**, then on the app's **Email settings** page click **Approve for aspex.com.au**, sign in as
+admin@aspex.com.au and Accept. The app automatically signs in to the organisation that owns the From address,
+so `MS_TENANT_ID` isn't used for sending.
 
 By default the Mail.Send permission lets this app send as any mailbox in your Microsoft 365 organisation.
 The app only ever sends as the address in `MAIL_FROM` (admin@aspex.com.au). If you have other staff
