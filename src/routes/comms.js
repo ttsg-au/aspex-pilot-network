@@ -96,7 +96,8 @@ router.get('/messages', (req, res) => {
   const list = db.all('messages').slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.send(layout({ title: 'Messages', active: '/messages', flash: flashOf(req), body: `
 <div class="head"><h1>Messages</h1><div class="actions"><a class="btn ghost" href="/settings/test-email" title="Sends a test email to ${esc(config.adminEmail)}">Send test email to myself</a> <a class="btn" href="/messages/new">New message</a></div></div>
-<p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (emails are not sent)' }[mail.method()]}</p>
+<p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (emails are not sent)' }[mail.method()]}
+${mail.method() !== 'graph' ? ` · Microsoft Graph settings found: tenant ID ${config.graph.found.tenantId ? '✓' : '✗'}, client ID ${config.graph.found.clientId ? '✓' : '✗'}, client secret ${config.graph.found.clientSecret ? '✓' : '✗'}` : ''}</p>
 ${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved to data/outbox, not sent. Set up Microsoft Graph sending (see README) to send for real.</div>' : ''}
 <div class="tablewrap"><table class="list"><thead><tr><th>Subject</th><th>Type</th><th>To</th><th>Sent</th><th>Status</th></tr></thead><tbody>
 ${list.map(m => {

@@ -78,8 +78,11 @@ function describeError(err) {
   const inner = Array.isArray(err.errors) ? err.errors : [];
   const codes = [err.code, ...inner.map(x => x && x.code)].filter(Boolean);
   const detail = err.message || inner.map(x => x && x.message).filter(Boolean).join('; ') || err.name || String(err);
-  if (codes.some(c => /ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ECONNRESET|ESOCKET|ECONNECTION/.test(c)) || err.name === 'AggregateError') {
-    return `Couldn't connect to the mail server (${codes.join(', ') || detail}). The host is probably blocking email port ${config.smtp.port}. Set up Microsoft Graph sending instead (see README).`;
+  if (codes.some(c => /ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EHOSTUNREACH|ECONNRESET|ESOCKET|ECONNECTION|EACCES/.test(c)) || err.name === 'AggregateError') {
+    const f = config.graph.found;
+    const missing = [!f.tenantId && 'MS_TENANT_ID', !f.clientId && 'MS_CLIENT_ID', !f.clientSecret && 'MS_CLIENT_SECRET'].filter(Boolean);
+    return `Couldn't connect to the mail server (${[...new Set(codes)].join(', ') || detail}). The host is blocking email port ${config.smtp.port}, so Microsoft Graph sending is needed. ` +
+      (missing.length ? `The app can't see these Graph settings: ${missing.join(', ')}. Check their names and values in the host's Secrets, then publish again.` : 'See README.');
   }
   if (codes.includes('EAUTH') || /535|authentication/i.test(detail)) {
     return `Microsoft refused the login (${detail}). Check SMTP_PASS, and that Authenticated SMTP is enabled for the mailbox.`;

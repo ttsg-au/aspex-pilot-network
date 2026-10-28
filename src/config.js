@@ -61,13 +61,19 @@ module.exports = {
   // When true, emails are written to data/outbox instead of being sent (for testing).
   // Microsoft Graph sending (preferred: works over HTTPS where email ports are blocked).
   graph: (() => {
-    const pick = (...names) => names.map(n => env[n]).find(v => v) || '';
-    const tenantId = pick('MS_TENANT_ID', 'GRAPH_TENANT_ID', 'AZURE_TENANT_ID');
-    const clientId = pick('MS_CLIENT_ID', 'GRAPH_CLIENT_ID', 'AZURE_CLIENT_ID');
-    const clientSecret = pick('MS_CLIENT_SECRET', 'GRAPH_CLIENT_SECRET', 'AZURE_CLIENT_SECRET');
+    // Accept the names however they were typed in the host's Secrets page: any capitals,
+    // spaces, dashes or underscores ("Tenant ID", "ms-tenant-id", "AZURE_TENANT_ID"...).
+    const norm = (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const byNorm = {};
+    for (const [k, v] of Object.entries(env)) if (v) byNorm[norm(k)] = String(v).trim();
+    const pick = (...names) => names.map(n => byNorm[norm(n)]).find(v => v) || '';
+    const tenantId = pick('MS_TENANT_ID', 'GRAPH_TENANT_ID', 'AZURE_TENANT_ID', 'TENANT_ID', 'DIRECTORY_TENANT_ID', 'DIRECTORY_ID');
+    const clientId = pick('MS_CLIENT_ID', 'GRAPH_CLIENT_ID', 'AZURE_CLIENT_ID', 'CLIENT_ID', 'APPLICATION_CLIENT_ID', 'APPLICATION_ID', 'APP_ID');
+    const clientSecret = pick('MS_CLIENT_SECRET', 'GRAPH_CLIENT_SECRET', 'AZURE_CLIENT_SECRET', 'CLIENT_SECRET', 'CLIENT_SECRET_VALUE', 'SECRET_VALUE', 'MS_SECRET');
     return {
       tenantId, clientId, clientSecret,
       configured: !!(tenantId && clientId && clientSecret),
+      found: { tenantId: !!tenantId, clientId: !!clientId, clientSecret: !!clientSecret },
       loginBase: env.GRAPH_LOGIN_BASE || 'https://login.microsoftonline.com',
       apiBase: env.GRAPH_API_BASE || 'https://graph.microsoft.com',
     };
