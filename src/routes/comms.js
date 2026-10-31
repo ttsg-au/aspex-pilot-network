@@ -1,8 +1,6 @@
 // Messaging (one, a filtered group, or everyone), job call-outs with response
 // buttons, and credential renewal reminders.
 const express = require('express');
-const path = require('path');
-const multer = require('multer');
 const db = require('../db');
 const config = require('../config');
 const M = require('../model');
@@ -12,45 +10,6 @@ const { esc, nl2br, fmtDate, fmtDateTime, layout, bare, options, badge } = requi
 const { filterBar, pilotRowsTable } = require('./pilots');
 
 const router = express.Router();
-
-// ---------- Attachments ----------
-// Files are held in memory while uploading, then saved to the database with the message,
-// so a resend can attach them again.
-const MAX_FILE = 25 * 1024 * 1024, MAX_TOTAL = 25 * 1024 * 1024;
-const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE, files: 10 } });
-const withAttachments = (field) => (req, res, next) => attachUpload.array(field, 10)(req, res, (err) => {
-  if (!err) return next();
-  const back = req.get('Referer') || '/messages/new';
-  const why = err.code === 'LIMIT_FILE_SIZE' ? 'One of the files is over 25 MB, which is too big to email.'
-    : err.code === 'LIMIT_FILE_COUNT' ? 'You can attach up to 10 files.' : 'The attachment couldn\u2019t be uploaded: ' + err.message;
-  res.redirect(back.replace(/([?&])msg=[^&]*/g, '$1') + (back.includes('?') ? '&' : '?') + 'msg=' + encodeURIComponent(why));
-});
-async function saveAttachments(files = []) {
-  const total = files.reduce((n, f) => n + f.size, 0);
-  if (total > MAX_TOTAL) throw new Error('The attachments add up to more than 25 MB, which is too big to email. Send them in separate messages.');
-  const out = [];
-  for (const f of files) {
-    if (!f.size) continue;
-    const mime = f.mimetype || 'application/octet-stream';
-    out.push({ file: await db.saveFile(f.buffer, f.originalname, mime), name: f.originalname, mime, size: f.size });
-  }
-  return out;
-}
-async function loadAttachments(list = []) {
-  const out = [];
-  for (const a of list) {
-    const f = await db.readFile(a.file);
-    if (!f) throw new Error(`The attachment ${a.name} is missing from the database.`);
-    out.push({ filename: a.name, contentType: a.mime, content: Buffer.from(f.content) });
-  }
-  return out;
-}
-const fmtSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
-const attachmentList = (list = []) => list.length ? `<ul class="attachlist">${list.map(a =>
-  `<li>📎 <a href="/attachments/${esc(a.file)}" target="_blank">${esc(a.name)}</a> <span class="sub">${fmtSize(a.size)}</span></li>`).join('')}</ul>` : '';
-const attachField = `<label>Attachments (optional)<input type="file" name="attachments" multiple></label>
-<p class="sub">Up to 10 files, 25 MB in total. Every pilot gets the same files.</p>`;
-
 const flashOf = (req) => req.query.msg ? String(req.query.msg) : '';
 const idsFrom = (v) => [].concat(v || []).flatMap(x => String(x).split(',')).map(s => s.trim()).filter(Boolean);
 
@@ -109,27 +68,23 @@ function jobButtons(jobId, p) {
 }
 
 // Send (or re-send) a saved message to some of its recipients, recording each result.
-async function deliver(msg, pilots) {
+function deliver(msg, pilots) {
   const buttonsFor = msg.kind === 'job' && msg.jobId ? (p) => jobButtons(msg.jobId, p) : () => [];
-  const record = (item, ok, err) => {
+  const items = pilots.map(p => ({
+    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p),
+  }));
+  mail.sendBatch(items, (item, ok, err) => {
     const m = db.get('messages', msg.id);
     const r = m.recipients.find(x => x.pilotId === item.pilotId);
     if (ok) Object.assign(r, { status: 'sent', sentAt: db.now(), error: '' });
     else Object.assign(r, { status: 'failed', error: String((err && err.message) || err), failedAt: db.now() });
     db.update('messages', m.id, { recipients: m.recipients });
-  };
-  let attachments = [];
-  try { attachments = await loadAttachments(msg.attachments); }
-  catch (e) { for (const p of pilots) record({ pilotId: p.id }, null, e); return; }
-  const items = pilots.map(p => ({
-    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p), attachments,
-  }));
-  mail.sendBatch(items, record);
+  });
 }
 
-function startSend({ subject, body, pilots, kind = 'message', jobId = null, attachments = [] }) {
+function startSend({ subject, body, pilots, kind = 'message', jobId = null }) {
   const msg = db.insert('messages', {
-    subject, body, kind, jobId, attachments,
+    subject, body, kind, jobId,
     recipients: pilots.map(p => ({ pilotId: p.id, name: p.fullName, email: p.email, status: 'queued' })),
   });
   deliver(msg, pilots);
@@ -165,26 +120,22 @@ router.get('/messages/new', (req, res) => {
 <div class="head"><h1>New message</h1></div>
 ${ids.length ? `<p class="sub">Sending to the ${pilots.length} pilot${pilots.length === 1 ? '' : 's'} you selected. <a href="/messages/new">Choose by filter instead</a></p>` :
     `<section class="card"><h2>Who to send to</h2>${filterBar(req.query, '/messages/new')}</section>`}
-<form method="post" action="/messages" class="card" enctype="multipart/form-data">
+<form method="post" action="/messages" class="card">
 <h2>Recipients <span class="count">${pilots.length}</span></h2>
 <div class="recips">${pilots.map(p => `<label class="chip"><input type="checkbox" name="ids" value="${p.id}" checked> ${esc(p.fullName)} <span class="sub">${esc(p.state || p.homeBase)}</span></label>`).join('') || '<p class="empty">No pilots match.</p>'}</div>
 <h2>Message</h2>
 <div class="tplbar">Start from: ${TEMPLATES.map(t => `<a href="/messages/new?${keep}&template=${t.id}">${esc(t.label)}</a>`).join(' · ')}</div>
 <label>Subject<input name="subject" value="${esc(subject)}" required></label>
 <label>Message<textarea name="body" rows="14" required>${esc(body)}</textarea></label>
-${attachField}
 <p class="sub">Each pilot gets their own email from ${esc(config.smtp.from)}. You can use <code>{first_name}</code>, <code>{name}</code>, <code>{state}</code>, <code>{home_base}</code> and <code>{missing}</code> (the Part A items that pilot hasn't told us they have).</p>
 <button data-confirm="Send this email now?">Send</button>
 </form>` }));
 });
 
-router.post('/messages', withAttachments('attachments'), async (req, res) => {
+router.post('/messages', (req, res) => {
   const pilots = idsFrom(req.body.ids).map(id => db.get('pilots', id)).filter(Boolean);
   if (!pilots.length) return res.redirect('/messages/new?msg=' + encodeURIComponent('No recipients selected.'));
-  let attachments;
-  try { attachments = await saveAttachments(req.files); }
-  catch (e) { return res.redirect(`/messages/new?ids=${pilots.map(p => p.id).join(',')}&msg=` + encodeURIComponent(e.message)); }
-  const msg = startSend({ subject: req.body.subject, body: req.body.body, pilots, attachments });
+  const msg = startSend({ subject: req.body.subject, body: req.body.body, pilots });
   res.redirect(`/messages/${msg.id}?msg=` + encodeURIComponent(`Sending to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}…`));
 });
 
@@ -197,7 +148,7 @@ router.get('/messages/:id', (req, res) => {
 ${pending ? '<meta http-equiv="refresh" content="4">' : ''}
 <div class="head"><div><a href="/messages" class="muted">← Messages</a><h1>${esc(m.subject)}</h1>
 <div class="sub">${fmtDateTime(m.createdAt)}${job ? ` · Job: <a href="/jobs/${job.id}">${esc(job.title)}</a>` : ''}</div></div></div>
-<div class="cols"><section class="card"><h2>Message</h2><div class="msgbody">${nl2br(m.body)}</div>${attachmentList(m.attachments)}</section>
+<div class="cols"><section class="card"><h2>Message</h2><div class="msgbody">${nl2br(m.body)}</div></section>
 <section class="card"><h2>Recipients</h2><table class="list compact"><tbody>${m.recipients.map(r => `<tr><td><a href="/pilots/${r.pilotId}">${esc(r.name)}</a><div class="sub">${esc(r.email)}</div></td>
 <td>${badge(r.status, r.status === 'sent' ? 'good' : r.status === 'failed' ? 'bad' : 'warn')}${r.error ? `<div class="sub bad">${esc(r.error)}</div>` : ''}</td></tr>`).join('')}</tbody></table>
 ${pending ? '<p class="sub">Sending… this page refreshes itself.</p>' : ''}
@@ -214,17 +165,6 @@ router.post('/messages/:id/resend', (req, res) => {
   db.update('messages', m.id, { recipients: m.recipients });
   deliver(m, pilots);
   res.redirect(`/messages/${m.id}?msg=` + encodeURIComponent(`Resending to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}…`));
-});
-
-// Open an attachment from a sent message.
-router.get('/attachments/:file', async (req, res) => {
-  const id = path.basename(req.params.file);
-  const a = db.all('messages').flatMap(m => m.attachments || []).find(x => x.file === id);
-  const f = a && await db.readFile(id);
-  if (!f) return res.status(404).send('Not found');
-  res.setHeader('Content-Type', a.mime || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${a.name.replace(/[^\w.\- ]/g, '')}"`);
-  res.send(Buffer.from(f.content));
 });
 
 // ---------- Renewal reminder for one credential ----------
@@ -391,14 +331,13 @@ ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.p
 
 <section class="card" id="invite"><h2>Send this job to pilots</h2>
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
-<form method="post" action="/jobs/${j.id}/send" enctype="multipart/form-data">
+<form method="post" action="/jobs/${j.id}/send">
 <div class="recips">${candidates.map(p => `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${preIds.length || !invited.has(p.id) ? ' checked' : ''}> ${esc(p.fullName)} <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span></label>`).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
 <label>Message (the job details are added below it, then “I'm interested” and “Not available” buttons)<textarea name="intro" rows="5">Hi {first_name},
 
 We have a job coming up that may suit you. Details are below – please let me know if you're interested and available.</textarea></label>
 <details><summary>Preview the job details that will be included</summary><div class="msgbody">${nl2br(jobSummary(j))}</div></details>
-${attachField}
 <button data-confirm="Send this job now?">Send job</button>
 </form></section>
 
@@ -406,20 +345,17 @@ ${attachField}
 <form method="post" action="/jobs/${j.id}/delete"><button class="link danger" data-confirm="Delete this job and its responses?">Delete job</button></form></details>` }));
 });
 
-router.post('/jobs/:id/send', withAttachments('attachments'), async (req, res) => {
+router.post('/jobs/:id/send', (req, res) => {
   const j = db.get('jobs', req.params.id);
   if (!j) return res.redirect('/jobs');
   const pilots = idsFrom(req.body.ids).map(id => db.get('pilots', id)).filter(Boolean);
   if (!pilots.length) return res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent('No pilots selected.') + '#invite');
-  let attachments;
-  try { attachments = await saveAttachments(req.files); }
-  catch (e) { return res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent(e.message) + '#invite'); }
   for (const p of pilots) {
     const existing = db.all('jobResponses').find(r => r.jobId === j.id && r.pilotId === p.id);
     if (!existing) db.insert('jobResponses', { jobId: j.id, pilotId: p.id, answer: 'invited', invitedAt: db.now(), assigned: false, note: '' });
   }
   const body = (req.body.intro || '') + '\n\n' + jobSummary(j) + '\n\nKind regards,\nKimberly Olsen\nAspex Drone Services';
-  startSend({ kind: 'job', jobId: j.id, pilots, subject: req.body.subject || 'Job available: ' + j.title, body, attachments });
+  startSend({ kind: 'job', jobId: j.id, pilots, subject: req.body.subject || 'Job available: ' + j.title, body });
   res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent(`Job sent to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}.`));
 });
 
