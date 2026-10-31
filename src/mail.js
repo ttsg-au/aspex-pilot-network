@@ -70,22 +70,85 @@ async function graphToken() {
   tokens[tenant] = { value: body.access_token, expires: Date.now() + (body.expires_in || 3600) * 1000 };
   return body.access_token;
 }
+// Attachments: Microsoft's one-step sendMail only accepts about 3 MB of attachments in total.
+// Bigger ones go the long way: create the email as a draft, upload each file in pieces, then send.
+// That needs the Mail.ReadWrite application permission as well as Mail.Send.
+const SMALL_TOTAL = 2.9 * 1024 * 1024;
+const CHUNK = 320 * 1024 * 10; // upload pieces must be multiples of 320 KB
+const fileAttachment = (a) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.filename, contentType: a.contentType, contentBytes: a.content.toString('base64') });
+
+async function graphCall(url, opts = {}) {
+  const res = await fetch(url.startsWith('http') ? url : `${config.graph.apiBase}/v1.0${url}`, {
+    ...opts,
+    headers: { Authorization: `Bearer ${await graphToken()}`, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  return res;
+}
+
 async function graphSend(msg) {
   const from = fromAddress();
-  const res = await fetch(`${config.graph.apiBase}/v1.0/users/${encodeURIComponent(from)}/sendMail`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${await graphToken()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: {
-        subject: msg.subject,
-        body: { contentType: 'HTML', content: msg.html },
-        toRecipients: [{ emailAddress: { address: msg.to } }],
-        replyTo: msg.replyTo ? [{ emailAddress: { address: addressOf(msg.replyTo) } }] : [],
-      },
-      saveToSentItems: true,
-    }),
+  const atts = msg.attachments || [];
+  const total = atts.reduce((n, a) => n + a.content.length, 0);
+  const message = {
+    subject: msg.subject,
+    body: { contentType: 'HTML', content: msg.html },
+    toRecipients: [{ emailAddress: { address: msg.to } }],
+    replyTo: msg.replyTo ? [{ emailAddress: { address: addressOf(msg.replyTo) } }] : [],
+  };
+  if (total > SMALL_TOTAL) return graphSendLarge(from, message, atts);
+  if (atts.length) message.attachments = atts.map(fileAttachment);
+  const res = await graphCall(`/users/${encodeURIComponent(from)}/sendMail`, {
+    method: 'POST', body: JSON.stringify({ message, saveToSentItems: true }),
   });
   if (res.status === 202 || res.ok) return { graph: true };
+  return graphFail(res, from);
+}
+
+async function graphSendLarge(from, message, atts) {
+  const base = `/users/${encodeURIComponent(from)}/messages`;
+  let res = await graphCall(base, { method: 'POST', body: JSON.stringify(message) });
+  if (res.status === 403) {
+    const err = new Error(`Attachments over 3 MB need one more Microsoft permission. In Microsoft Entra, open the app registration → API permissions → Add a permission → Microsoft Graph → Application permissions → Mail.ReadWrite, then on the Email settings page click "Approve for ${sendTenant()}" again.`);
+    err.needsConsent = true; throw err;
+  }
+  if (!res.ok) return graphFail(res, from);
+  const draft = await res.json();
+  try {
+    for (const a of atts) {
+      if (a.content.length <= SMALL_TOTAL) {
+        res = await graphCall(`${base}/${draft.id}/attachments`, { method: 'POST', body: JSON.stringify(fileAttachment(a)) });
+        if (!res.ok) return await graphFail(res, from);
+        continue;
+      }
+      res = await graphCall(`${base}/${draft.id}/attachments/createUploadSession`, {
+        method: 'POST',
+        body: JSON.stringify({ AttachmentItem: { attachmentType: 'file', name: a.filename, size: a.content.length, contentType: a.contentType } }),
+      });
+      if (!res.ok) return await graphFail(res, from);
+      const { uploadUrl } = await res.json();
+      for (let start = 0; start < a.content.length; start += CHUNK) {
+        const piece = a.content.subarray(start, Math.min(start + CHUNK, a.content.length));
+        // The upload address is already authorised; Microsoft rejects it if a sign-in token is added.
+        const put = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(piece.length),
+            'Content-Range': `bytes ${start}-${start + piece.length - 1}/${a.content.length}` },
+          body: piece,
+        });
+        if (!put.ok) throw new Error(`Microsoft stopped the upload of ${a.filename} (${put.status}).`);
+      }
+    }
+    res = await graphCall(`${base}/${draft.id}/send`, { method: 'POST' });
+    if (res.status === 202 || res.ok) return { graph: true };
+    return await graphFail(res, from);
+  } catch (e) {
+    // Don't leave a half-built draft sitting in the mailbox.
+    graphCall(`${base}/${draft.id}`, { method: 'DELETE' }).catch(() => {});
+    throw e;
+  }
+}
+
+async function graphFail(res, from) {
   const body = await res.json().catch(() => ({}));
   const e = body.error || {};
   if (e.code === 'ErrorInvalidUser' || res.status === 404) {
@@ -135,18 +198,20 @@ ${paras}${btns}
 </div></body></html>`;
 }
 
-async function send({ to, subject, text, buttons = [] }) {
+// attachments: [{ filename, contentType, content: Buffer }]
+async function send({ to, subject, text, buttons = [], attachments = [] }) {
   const plain = text.replace(/\*\*(.+?)\*\*/g, '$1');
   const msg = {
     from: config.smtp.from, replyTo: config.smtp.replyTo, to, subject,
     text: plain + (buttons.length ? '\n\n' + buttons.map(b => `${b.label}: ${b.url}`).join('\n') : ''),
     html: toHtml(text, buttons),
+    attachments,
   };
   const m = method();
   if (m === 'test') {
     fs.mkdirSync(OUTBOX, { recursive: true });
     const file = path.join(OUTBOX, `${Date.now()}-${String(to).replace(/[^a-z0-9@.]/gi, '_')}.json`);
-    fs.writeFileSync(file, JSON.stringify(msg, null, 2));
+    fs.writeFileSync(file, JSON.stringify({ ...msg, attachments: attachments.map(a => ({ filename: a.filename, bytes: a.content.length })) }, null, 2));
     return { dryRun: true };
   }
   try {
@@ -174,7 +239,7 @@ async function sendBatch(items, onEach) {
     try { onEach(item, await send(item), null); }
     catch (e) {
       onEach(item, null, e);
-      if (/Couldn't connect|refused the login|sign-in failed|hasn't been approved|refused permission|couldn't find the mailbox/.test(e.message)) fatal = e;
+      if (/Couldn't connect|refused the login|sign-in failed|hasn't been approved|refused permission|couldn't find the mailbox|one more Microsoft permission/.test(e.message)) fatal = e;
     }
     if (paceMs()) await sleep(paceMs());
   }

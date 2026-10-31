@@ -94,6 +94,7 @@ details.add{margin-top:12px}details.add>summary{cursor:pointer;color:var(--blue)
 .chip input{width:auto;margin:0}
 .tplbar{font-size:13px;margin-bottom:10px;color:var(--sub)}
 .msgbody{background:#fafbfc;border:1px solid var(--line);border-radius:6px;padding:12px;white-space:normal}
+.attachlist{list-style:none;padding:0;margin:12px 0 0}.attachlist li{margin:4px 0}
 pre{background:#fafbfc;border:1px solid var(--line);border-radius:6px;padding:10px;overflow-x:auto}
 code{background:var(--plain);padding:0 4px;border-radius:3px}
 .danger-zone{border-color:#efb8b1;margin-top:24px}

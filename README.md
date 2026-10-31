@@ -19,6 +19,7 @@ The private admin system for the Aspex Drone Services National Pilot Network.
 - **Messaging:** email one pilot, a ticked selection, a filtered group or everyone. Each pilot gets their own email from admin@aspex.com.au.
   - You can personalise with `{first_name}`, `{name}`, `{state}`, `{home_base}` and `{missing}`.
   - `{missing}` lists the Part A items that pilot hasn't got yet.
+  - Attach up to 10 files (25 MB in total) to a message or job call-out. Every pilot gets the same files, and they're kept with the message so a resend includes them.
 - **Job call-outs:** send a job to chosen pilots. Each email has **I'm interested** and **Not available** buttons.
   - Replies, with an optional note, show on the job page.
   - You get an email the moment someone replies.
@@ -76,6 +77,9 @@ over normal HTTPS, and the emails appear in your Sent Items.
    straight away (it's only shown once). Put a reminder in your calendar to renew it before it expires.
 4. **API permissions → Add a permission → Microsoft Graph → Application permissions → Mail.Send → Add.**
    Then click **Grant admin consent for …** and confirm. The status should show a green tick.
+   **For attachments over 3 MB** also add **Mail.ReadWrite** (Application permission) and grant consent.
+   Microsoft's simple send only takes about 3 MB of attachments, so bigger ones are uploaded to a draft in
+   the mailbox and then sent, which needs this extra permission. Small attachments work with Mail.Send alone.
 5. In GoDaddy, add three secrets to the app:
    - `MS_TENANT_ID` = Directory (tenant) ID
    - `MS_CLIENT_ID` = Application (client) ID
