@@ -10,6 +10,7 @@
 The private admin system for the Aspex Drone Services National Pilot Network.
 
 - **Pilot records:** everything from the registration form, plus your own notes.
+- **Signed contractor agreement:** recorded as a credential ("Contractor agreement (signed)") with the date signed and the signed PDF. Pilots with one show in green with "Agreement ✓ date"; those without show "No agreement" and can't be assigned to a job.
 - **Credentials:** ARN, operator accreditation, RePL, drone registration, insurance, White Card, AROC, ReOC and others, each with a number, issue and expiry dates, a certificate upload and a "Verified by me" tick.
 - **Pathway stages:** Registered → Contacted → Credentials checked → Inducted → Supervised work → Approved for solo work, plus On hold and Not proceeding.
 - **Two checklists on each pilot:**

@@ -20,6 +20,7 @@ const STAGES = [
 const stageLabel = (id) => (STAGES.find(s => s.id === id) || { label: id }).label;
 
 const QUAL_TYPES = [
+  { id: 'agreement', label: 'Contractor agreement (signed)', expires: false, detail: 'Version, e.g. v1.4' },
   { id: 'arn', label: 'ARN (Aviation Reference Number)', expires: false },
   { id: 'accreditation', label: 'RPA operator accreditation', expires: true },
   { id: 'repl', label: 'RePL (Remote Pilot Licence)', expires: false, detail: 'Ratings / category (e.g. multirotor up to 7 kg)' },
@@ -77,6 +78,16 @@ function flightHours(pilotId) {
   return Math.round(mins / 6) / 10;
 }
 
+// The pilot's signed contractor agreement, if any: the latest "Contractor agreement" credential
+// with a date signed, or (for older entries) an "agreement signed" record. No agreement, no work.
+function agreementOf(p) {
+  const q = qualsFor(p.id).filter(x => x.type === 'agreement' && x.issuedOn)
+    .sort((a, b) => b.issuedOn.localeCompare(a.issuedOn))[0];
+  if (q) return { date: q.issuedOn, version: q.detail || '' };
+  const r = recordsFor(p.id).find(x => x.type === 'agreement');
+  return r ? { date: r.date || '', version: '' } : null;
+}
+
 // What's still missing before this pilot can work on a client site.
 function readiness(p) {
   const quals = qualsFor(p.id);
@@ -91,7 +102,7 @@ function readiness(p) {
     { label: 'Operator accreditation or RePL', ok: !!(verified('accreditation') || verified('repl')), have: !!(has('accreditation') || has('repl')) },
     { label: 'Public liability insurance', ok: !!verified('insurance'), have: !!has('insurance') },
     { label: 'White Card', ok: !!verified('white_card'), have: !!has('white_card') },
-    { label: 'Contractor agreement', ok: !!did('agreement'), have: !!did('agreement') },
+    { label: 'Signed contractor agreement', ok: !!agreementOf(p), have: !!agreementOf(p) },
     { label: 'Aspex procedures & safety induction', ok: !!did('induction_procedures'), have: !!did('induction_procedures') },
   ];
   const reoc = [
@@ -145,5 +156,5 @@ module.exports = {
   STATES, STAGES, stageLabel, QUAL_TYPES, qualLabel, RECORD_TYPES, recordLabel,
   DRONE_OPTIONS, TRAVEL_OPTIONS, CREDENTIAL_OPTIONS,
   daysUntil, expiryStatus, qualsFor, recordsFor, flightsFor, flightHours, firstName,
-  readiness, filterPilots, guessState,
+  readiness, agreementOf, filterPilots, guessState,
 };

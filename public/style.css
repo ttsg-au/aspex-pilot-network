@@ -98,6 +98,7 @@ pre{background:#fafbfc;border:1px solid var(--line);border-radius:6px;padding:10
 code{background:var(--plain);padding:0 4px;border-radius:3px}
 .danger-zone{border-color:#efb8b1;margin-top:24px}
 .bad{color:var(--bad-t)}
+.cleared,a.cleared,a.cleared b{color:var(--good-t)}
 body.bare{background:var(--bg)}
 .narrow{max-width:520px;margin:50px auto;padding:26px;background:#fff;border:1px solid var(--line);border-radius:12px}
 .brandline{display:flex;align-items:center;gap:8px;color:var(--sub);margin:0 0 6px}

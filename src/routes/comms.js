@@ -289,6 +289,11 @@ router.post('/jobs/:id/status', (req, res) => {
 
 router.post('/jobs/:id/assign', (req, res) => {
   const r = db.all('jobResponses').find(x => x.jobId === req.params.id && x.pilotId === req.body.pilotId);
+  const p = r && db.get('pilots', r.pilotId);
+  // No signed agreement, no work.
+  if (r && !r.assigned && p && !M.agreementOf(p)) {
+    return res.redirect(`/jobs/${req.params.id}?msg=` + encodeURIComponent(`${p.fullName} hasn't got a signed contractor agreement, so they can't be assigned work yet.`));
+  }
   if (r) db.update('jobResponses', r.id, { assigned: !r.assigned });
   res.redirect(`/jobs/${req.params.id}`);
 });
@@ -320,10 +325,10 @@ router.get('/jobs/:id', (req, res) => {
 
 <section class="card"><h2>Responses</h2>
 <div class="tablewrap"><table class="list"><thead><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note</th><th>Assigned</th></tr></thead><tbody>
-${rs.map(r => { const p = db.get('pilots', r.pilotId) || { fullName: '(deleted)' }; return `<tr><td><a href="/pilots/${r.pilotId}">${esc(p.fullName)}</a></td><td>${esc(p.homeBase)}</td>
+${rs.map(r => { const p = db.get('pilots', r.pilotId) || { fullName: '(deleted)' }; const ag = p.id && M.agreementOf(p); return `<tr><td><a href="/pilots/${r.pilotId}"${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</a>${ag ? '' : ' ' + badge('No agreement', 'bad')}</td><td>${esc(p.homeBase)}</td>
 <td>${badge(ansLabel[r.answer] || r.answer, r.answer === 'interested' ? 'good' : r.answer === 'unavailable' ? 'plain' : 'warn')}<div class="sub">${r.answeredAt ? fmtDateTime(r.answeredAt) : 'Invited ' + fmtDateTime(r.invitedAt)}</div></td>
 <td>${nl2br(r.note || '')}</td>
-<td><form method="post" action="/jobs/${j.id}/assign"><input type="hidden" name="pilotId" value="${r.pilotId}"><button class="${r.assigned ? '' : 'ghost'} small">${r.assigned ? '✓ Assigned' : 'Assign'}</button></form></td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">Not sent to anyone yet.</td></tr>'}
+<td>${r.assigned || ag ? `<form method="post" action="/jobs/${j.id}/assign"><input type="hidden" name="pilotId" value="${r.pilotId}"><button class="${r.assigned ? '' : 'ghost'} small">${r.assigned ? '✓ Assigned' : 'Assign'}</button></form>` : '<span class="sub">Agreement needed</span>'}</td></tr>`; }).join('') || '<tr><td colspan="5" class="empty">Not sent to anyone yet.</td></tr>'}
 </tbody></table></div>
 ${assignedIds.length ? `<p><a class="btn ghost" href="/messages/new?ids=${assignedIds.join(',')}&subject=${encodeURIComponent('Re: ' + j.title)}">Email the assigned pilot${assignedIds.length > 1 ? 's' : ''}</a></p>` : ''}
 ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.pilotId).join(',')}&subject=${encodeURIComponent('Update: ' + j.title)}">Email everyone invited</a></p>` : ''}
@@ -332,7 +337,8 @@ ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.p
 <section class="card" id="invite"><h2>Send this job to pilots</h2>
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
 <form method="post" action="/jobs/${j.id}/send">
-<div class="recips">${candidates.map(p => `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${preIds.length || !invited.has(p.id) ? ' checked' : ''}> ${esc(p.fullName)} <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span></label>`).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
+<div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag && (preIds.length || !invited.has(p.id)) ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
+${candidates.some(p => !M.agreementOf(p)) ? '<p class="sub">Pilots without a signed agreement are left unticked. You can still tick them to let them know about the job, but they can’t be assigned until they’ve signed.</p>' : ''}
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
 <label>Message (the job details are added below it, then “I'm interested” and “Not available” buttons)<textarea name="intro" rows="5">Hi {first_name},
 

@@ -41,20 +41,24 @@ ${extra}<button>Filter</button> <a href="${action}" class="muted">Clear</a>
 </form>`;
 }
 
+// Green "Agreement ✓ date" when signed; red "No agreement" otherwise (they can't be given work).
+const agreementBadge = (ag) => ag ? badge('Agreement ✓' + (ag.date ? ' ' + fmtDate(ag.date) : ''), 'good') : badge('No agreement', 'bad');
+
 function pilotRowsTable(list, { selectable = true } = {}) {
   if (!list.length) return '<p class="empty">No pilots match.</p>';
   return `<div class="tablewrap"><table class="list">
 <thead><tr>${selectable ? '<th><input type="checkbox" data-check-all></th>' : ''}<th>Pilot</th><th>Base</th><th>Part</th><th>Stage</th><th>Credentials</th><th>Drones</th><th>Registered</th></tr></thead>
 <tbody>${list.map(p => {
-    const quals = M.qualsFor(p.id);
-    const qb = quals.map(q => {
+    const quals = M.qualsFor(p.id).filter(q => q.type !== 'agreement');
+    const ag = M.agreementOf(p);
+    const qb = agreementBadge(ag) + ' ' + quals.map(q => {
       const st = M.expiryStatus(q);
       const kind = st === 'expired' ? 'bad' : st === 'soon' ? 'warn' : q.verified ? 'good' : 'plain';
       const short = { arn: 'ARN', accreditation: 'Accred.', repl: 'RePL', drone_reg: 'Drone reg', reoc: 'ReOC', insurance: 'Insurance', white_card: 'White Card', aroc: 'AROC', first_aid: 'First aid', thermography: 'Thermo', other: 'Other' }[q.type];
       return badge(short + (q.verified ? ' ✓' : ''), kind);
     }).join(' ');
     return `<tr>${selectable ? `<td><input type="checkbox" name="ids" value="${p.id}" form="bulk"></td>` : ''}
-<td><a href="/pilots/${p.id}"><b>${esc(p.fullName)}</b></a><div class="sub">${esc([p.email, p.mobile].filter(Boolean).join(' · '))}</div></td>
+<td><a href="/pilots/${p.id}"${ag ? ' class="cleared" title="Signed agreement on file"' : ''}><b>${esc(p.fullName)}</b></a><div class="sub">${esc([p.email, p.mobile].filter(Boolean).join(' · '))}</div></td>
 <td>${esc(p.homeBase)}${p.state ? ` <span class="state">${p.state}</span>` : ''}<div class="sub">${esc(p.travel)}</div></td>
 <td>${p.partA ? badge('A') : ''} ${p.partB ? badge('B') : ''}</td>
 <td>${badge(M.stageLabel(p.stage), 'stage-' + p.stage)}</td>
@@ -105,6 +109,7 @@ router.get('/pilots/:id', (req, res) => {
   const recs = M.recordsFor(p.id);
   const flights = M.flightsFor(p.id);
   const ready = M.readiness(p);
+  const ag = M.agreementOf(p);
   const msgs = db.where('messages', m => (m.recipients || []).some(r => r.pilotId === p.id))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const jobs = db.where('jobResponses', r => r.pilotId === p.id).map(r => ({ r, job: db.get('jobs', r.jobId) })).filter(x => x.job);
@@ -124,7 +129,7 @@ router.get('/pilots/:id', (req, res) => {
 <form method="post" action="/quals/${q.id}" enctype="multipart/form-data" class="grid2 small">
 <label>Number<input name="number" value="${esc(q.number)}"></label>
 <label>Detail<input name="detail" value="${esc(q.detail)}"></label>
-<label>Issued<input type="date" name="issuedOn" value="${esc(q.issuedOn)}"></label>
+<label>${q.type === 'agreement' ? 'Date signed' : 'Issued'}<input type="date" name="issuedOn" value="${esc(q.issuedOn)}"></label>
 <label>Expires<input type="date" name="expiresOn" value="${esc(q.expiresOn)}"></label>
 <label>Replace file<input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp"></label>
 <label class="inline"><input type="checkbox" name="verified"${q.verified ? ' checked' : ''}> Verified by me</label>
@@ -138,11 +143,13 @@ ${q.expiresOn ? `<button formaction="/quals/${q.id}/remind" class="ghost">Email 
 
   res.send(layout({
     title: p.fullName, active: '/pilots', flash: flashOf(req), body: `
-<div class="head"><div><a href="/pilots" class="muted">← Pilots</a><h1>${esc(p.fullName)}</h1>
+<div class="head"><div><a href="/pilots" class="muted">← Pilots</a><h1${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</h1>
+<div>${agreementBadge(ag)}${ag && ag.version ? ' <span class="sub">' + esc(ag.version) + '</span>' : ''}</div>
 <div class="sub">${esc(p.business)}${p.abn && !(p.business || '').replace(/\s/g, '').includes(p.abn.replace(/\s/g, '')) ? ' · ABN ' + esc(p.abn) : ''}</div></div>
 <div class="actions"><a class="btn" href="/messages/new?ids=${p.id}">Email ${esc(M.firstName(p))}</a>
 <a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> <a class="btn ghost" href="#delete">Delete…</a></div></div>
 
+${ag ? '' : `<div class="flash bad"><b>No signed contractor agreement.</b> ${esc(M.firstName(p))} can't be given work until it's signed. When it is, add it under Credentials → “Contractor agreement (signed)” with the date signed.</div>`}
 <section class="card"><h2>Pathway stage</h2>
 <form method="post" action="/pilots/${p.id}/stage" class="stages">${stageButtons}</form>
 <p class="sub">${esc((M.STAGES.find(s => s.id === p.stage) || {}).hint || '')}</p></section>
@@ -163,7 +170,7 @@ ${ready.partAReady ? '<p class="okline">All done – ready for client sites.</p>
 <label>Number<input name="number" placeholder="e.g. ARN, licence or policy number"></label>
 <label>Detail<input name="detail" placeholder="Ratings, drone serial, insurer and cover…"></label>
 <label>Certificate (PDF or photo)<input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png,.heic,.webp"></label>
-<label>Issued<input type="date" name="issuedOn"></label>
+<label>Issued (for an agreement, the date signed)<input type="date" name="issuedOn"></label>
 <label>Expires<input type="date" name="expiresOn"></label>
 <label class="inline"><input type="checkbox" name="verified"> Verified by me</label>
 <label class="full">Note<input name="note"></label>
@@ -277,8 +284,15 @@ function qualFields(b, stored) {
   if (stored) Object.assign(f, stored);
   return f;
 }
+// An agreement is one you've countersigned, so it counts as verified; it needs the date signed.
+function agreementRules(type, f) {
+  if (type !== 'agreement') return;
+  f.verified = true;
+  if (!f.issuedOn) f.issuedOn = db.today();
+}
 router.post('/pilots/:id/quals', upload.single('file'), async (req, res) => {
   const f = qualFields(req.body, await storeUpload(req.file));
+  agreementRules(req.body.type, f);
   if (f.verified) f.verifiedOn = db.today();
   db.insert('qualifications', { pilotId: req.params.id, type: req.body.type || 'other', ...f });
   back(res, `/pilots/${req.params.id}`, 'Credential added.');
@@ -287,6 +301,7 @@ router.post('/quals/:id', upload.single('file'), async (req, res) => {
   const q = db.get('qualifications', req.params.id);
   if (!q) return res.redirect('/pilots');
   const f = qualFields(req.body, await storeUpload(req.file));
+  agreementRules(q.type, f);
   if (f.verified && !q.verified) f.verifiedOn = db.today();
   if (!f.verified) f.verifiedOn = '';
   if (req.file && q.file) db.deleteFile(q.file);
