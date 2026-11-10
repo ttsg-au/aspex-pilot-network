@@ -88,7 +88,7 @@ ${unplaced.length && !pending ? `<p class="sub">Not on the map: ${unplaced.map(p
 <script>(function(){var el=document.getElementById('pilotmap');if(!el||!window.L)return;
 var pts=${JSON.stringify(pts).replace(/</g, '\\u003c')};
 var map=L.map(el,{scrollWheelZoom:false}).setView([-27,134],4);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,referrerPolicy:'strict-origin',attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
 function e(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 var b=[];pts.forEach(function(p){
   var m=L.circleMarker([p.lat,p.lng],{radius:8,weight:2,color:'#fff',fillColor:p.ok?'#1c7c47':'#0f5e9c',fillOpacity:.9}).addTo(map);
