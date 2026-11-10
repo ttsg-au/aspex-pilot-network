@@ -26,7 +26,24 @@ function merge(text, p) {
     .replace(/\{missing\}/g, missingItems(p));
 }
 
+const AGREEMENT_LINK_PLACEHOLDER = 'PASTE THE AGREEMENT LINK HERE';
 const TEMPLATES = [
+  { id: 'agreement', label: 'Contractor agreement to sign', subject: 'Aspex Pilot Network – your contractor agreement',
+    body: `Hi {first_name},
+
+Welcome to the Aspex Pilot Network, and thanks for joining.
+
+Before we can offer you any work, we need a signed copy of our contractor agreement on file. You can find it here:
+
+${AGREEMENT_LINK_PLACEHOLDER}
+
+Please read it through, sign it and email the signed copy back to me. If the link doesn't open when you click it, copy it into your browser's address bar.
+
+If you have any questions about the agreement, just reply to this email.
+
+Kind regards,
+Kimberly Olsen
+Aspex Drone Services` },
   { id: 'next_steps', label: 'Next steps (lists what each pilot is missing)', subject: 'Aspex Pilot Network – your next steps',
     body: `Hi {first_name},
 
@@ -95,7 +112,7 @@ function startSend({ subject, body, pilots, kind = 'message', jobId = null }) {
 router.get('/messages', (req, res) => {
   const list = db.all('messages').slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.send(layout({ title: 'Messages', active: '/messages', flash: flashOf(req), body: `
-<div class="head"><h1>Messages</h1><div class="actions"><a class="btn ghost" href="/settings/email">Email settings</a> <a class="btn" href="/messages/new">New message</a></div></div>
+<div class="head"><h1>Messages</h1><div class="actions"><a class="btn ghost" href="/settings/email">Email settings</a> <a class="btn ghost" href="/messages/new?agreement=no&template=agreement">Send agreement to pilots who haven\u2019t signed</a> <a class="btn" href="/messages/new">New message</a></div></div>
 <p class="sub">Sending method: ${{ graph: 'Microsoft Graph', smtp: 'SMTP (' + esc(config.smtp.host) + ':' + config.smtp.port + ')', test: 'test mode (emails are not sent)' }[mail.method()]}
 ${mail.method() !== 'graph' ? ` · Microsoft Graph settings found: tenant ID ${config.graph.found.tenantId ? '✓' : '✗'}, client ID ${config.graph.found.clientId ? '✓' : '✗'}, client secret ${config.graph.found.clientSecret ? '✓' : '✗'}` : ''}</p>
 ${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved to data/outbox, not sent. Set up Microsoft Graph sending (see README) to send for real.</div>' : ''}
@@ -115,8 +132,8 @@ router.get('/messages/new', (req, res) => {
   const tpl = TEMPLATES.find(t => t.id === req.query.template);
   const subject = req.query.subject || (tpl ? tpl.subject : '');
   const body = req.query.body || (tpl ? tpl.body : TEMPLATES[1].body);
-  const keep = new URLSearchParams(Object.entries(req.query).filter(([k, v]) => v && !['template', 'mode', 'subject', 'body'].includes(k))).toString();
-  res.send(layout({ title: 'New message', active: '/messages', body: `
+  const keep = new URLSearchParams(Object.entries(req.query).filter(([k, v]) => v && !['template', 'mode', 'subject', 'body', 'msg'].includes(k))).toString();
+  res.send(layout({ title: 'New message', active: '/messages', flash: flashOf(req), body: `
 <div class="head"><h1>New message</h1></div>
 ${ids.length ? `<p class="sub">Sending to the ${pilots.length} pilot${pilots.length === 1 ? '' : 's'} you selected. <a href="/messages/new">Choose by filter instead</a></p>` :
     `<section class="card"><h2>Who to send to</h2>${filterBar(req.query, '/messages/new')}</section>`}
@@ -135,6 +152,11 @@ ${ids.length ? `<p class="sub">Sending to the ${pilots.length} pilot${pilots.len
 router.post('/messages', (req, res) => {
   const pilots = idsFrom(req.body.ids).map(id => db.get('pilots', id)).filter(Boolean);
   if (!pilots.length) return res.redirect('/messages/new?msg=' + encodeURIComponent('No recipients selected.'));
+  if (String(req.body.body || '').includes(AGREEMENT_LINK_PLACEHOLDER)) { // stop before it goes out without the link
+    const back = new URLSearchParams({ ids: pilots.map(p => p.id).join(','), subject: req.body.subject || '', body: req.body.body || '',
+      msg: 'Paste the agreement link in place of ' + AGREEMENT_LINK_PLACEHOLDER + ' before sending.' });
+    return res.redirect('/messages/new?' + back.toString());
+  }
   const msg = startSend({ subject: req.body.subject, body: req.body.body, pilots });
   res.redirect(`/messages/${msg.id}?msg=` + encodeURIComponent(`Sending to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}…`));
 });

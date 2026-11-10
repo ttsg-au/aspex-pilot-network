@@ -38,6 +38,7 @@ function filterBar(q, action, extra = '') {
 <select name="qual">${options(M.QUAL_TYPES.filter(t => t.id !== 'other'), q.qual, { blank: 'Any credential' })}</select>
 <select name="drone">${options(M.DRONE_OPTIONS.filter(d => d !== 'None yet'), q.drone, { blank: 'Any drone' })}</select>
 <select name="travel">${options(M.TRAVEL_OPTIONS, q.travel, { blank: 'Any travel range' })}</select>
+<select name="agreement">${options([['yes', 'Agreement signed'], ['no', 'Agreement not signed']], q.agreement, { blank: 'Signed or not' })}</select>
 ${extra}<button>Filter</button> <a href="${action}" class="muted">Clear</a>
 </form>`;
 }

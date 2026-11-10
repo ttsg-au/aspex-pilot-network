@@ -127,6 +127,8 @@ function filterPilots(q = {}) {
   if (q.qual) list = list.filter(p => qualsFor(p.id).some(x => x.type === q.qual && expiryStatus(x) !== 'expired'));
   if (q.drone) list = list.filter(p => (p.drones || []).includes(q.drone) || (q.drone === 'Other' && p.dronesOther));
   if (q.travel) list = list.filter(p => p.travel === q.travel);
+  if (q.agreement === 'yes') list = list.filter(p => agreementOf(p));
+  if (q.agreement === 'no') list = list.filter(p => !agreementOf(p));
   return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 }
 
