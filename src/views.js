@@ -17,11 +17,14 @@ const NAV = [
   ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/import', 'Add / import'], ['/backup', 'Backup'],
 ];
 
+// Changes on every restart/deploy so browsers fetch the new style sheet and script.
+const ASSET_V = Date.now().toString(36);
+
 function layout({ title, body, active = '', flash = '', head = '', scripts = '' }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Aspex Pilot Network</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=${ASSET_V}">
 ${head}
 </head><body>
 <header class="top"><div class="wrap topin">
@@ -33,7 +36,7 @@ ${head}
 ${flash ? `<div class="flash">${esc(flash)}</div>` : ''}
 ${body}
 </main>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=${ASSET_V}"></script>
 ${scripts}
 </body></html>`;
 }
@@ -41,7 +44,7 @@ ${scripts}
 function bare({ title, body }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title><link rel="stylesheet" href="/static/style.css"></head>
+<title>${esc(title)}</title><link rel="stylesheet" href="/static/style.css?v=${ASSET_V}"></head>
 <body class="bare"><main class="narrow">${body}</main></body></html>`;
 }
 

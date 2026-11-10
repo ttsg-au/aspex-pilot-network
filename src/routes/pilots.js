@@ -80,7 +80,7 @@ function pilotMap(list) {
     s: M.stageLabel(p.stage), ok: !!M.agreementOf(p), lat: p.geo.lat, lng: p.geo.lng }));
   const html = `<details class="card mapcard" open><summary><h2>Map</h2>
 <span class="sub">${placed.length} of ${list.length} shown · green = signed agreement</span></summary>
-<div id="pilotmap"></div>
+<div id="pilotmap" style="height:420px;border-radius:8px;margin-top:12px;z-index:0"></div>
 ${pending ? `<p class="sub">Finding ${pending} location${pending > 1 ? 's' : ''}… refresh the page in a minute.</p>` : ''}
 ${unplaced.length && !pending ? `<p class="sub">Not on the map: ${unplaced.map(p => `<a href="/pilots/${p.id}">${esc(p.fullName)}</a>${p.homeBase ? '' : ' (no home base)'}`).join(', ')}. Check the home base, or set a map position on their record.</p>` : ''}
 </details>`;
