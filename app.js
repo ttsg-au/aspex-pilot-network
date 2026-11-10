@@ -26,6 +26,7 @@ app.use((req, res, next) => dbError && req.path !== '/health'
   ? res.status(503).send('The pilot network app can\u2019t reach its database right now. Check the MySQL settings in the hosting secrets and the runtime logs, then restart the app.')
   : next());
 app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use('/static/leaflet', express.static(path.join(path.dirname(require.resolve('leaflet/package.json')), 'dist'), { maxAge: '7d' }));
 
 // Health check for the host: always answers 200 without needing a login.
 app.get('/health', (req, res) => res.status(dbError ? 503 : 200).type('text').send(dbError ? 'database error' : 'ok ' + db.mode()));

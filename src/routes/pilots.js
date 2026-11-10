@@ -5,6 +5,7 @@ const multer = require('multer');
 const db = require('../db');
 const config = require('../config');
 const M = require('../model');
+const geo = require('../geo');
 const V = require('../views');
 const { esc, nl2br, fmtDate, fmtDateTime, layout, options, badge, expiryBadge } = V;
 
@@ -69,15 +70,46 @@ function pilotRowsTable(list, { selectable = true } = {}) {
 }
 
 // ---------- List ----------
+// Map of pilots' home bases (Leaflet + OpenStreetMap). Positions come from src/geo.js.
+const LEAFLET_CSS = '<link rel="stylesheet" href="/static/leaflet/leaflet.css">';
+function pilotMap(list) {
+  const pending = geo.refresh();
+  const placed = list.filter(p => p.geo && Number.isFinite(p.geo.lat));
+  const unplaced = list.filter(p => !(p.geo && Number.isFinite(p.geo.lat)));
+  const pts = placed.map(p => ({ id: p.id, n: p.fullName, b: [p.homeBase, p.state].filter(Boolean).join(' '),
+    s: M.stageLabel(p.stage), ok: !!M.agreementOf(p), lat: p.geo.lat, lng: p.geo.lng }));
+  const html = `<details class="card mapcard" open><summary><h2>Map</h2>
+<span class="sub">${placed.length} of ${list.length} shown · green = signed agreement</span></summary>
+<div id="pilotmap"></div>
+${pending ? `<p class="sub">Finding ${pending} location${pending > 1 ? 's' : ''}… refresh the page in a minute.</p>` : ''}
+${unplaced.length && !pending ? `<p class="sub">Not on the map: ${unplaced.map(p => `<a href="/pilots/${p.id}">${esc(p.fullName)}</a>${p.homeBase ? '' : ' (no home base)'}`).join(', ')}. Check the home base, or set a map position on their record.</p>` : ''}
+</details>`;
+  const js = `<script src="/static/leaflet/leaflet.js"></script>
+<script>(function(){var el=document.getElementById('pilotmap');if(!el||!window.L)return;
+var pts=${JSON.stringify(pts).replace(/</g, '\\u003c')};
+var map=L.map(el,{scrollWheelZoom:false}).setView([-27,134],4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+function e(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+var b=[];pts.forEach(function(p){
+  var m=L.circleMarker([p.lat,p.lng],{radius:8,weight:2,color:'#fff',fillColor:p.ok?'#1c7c47':'#0f5e9c',fillOpacity:.9}).addTo(map);
+  m.bindPopup('<a href="/pilots/'+p.id+'"><b>'+e(p.n)+'</b></a><br>'+e(p.b)+'<br>'+e(p.s)+(p.ok?'<br>Agreement signed':''));
+  m.bindTooltip(e(p.n));b.push([p.lat,p.lng]);});
+if(b.length>1)map.fitBounds(b,{padding:[30,30],maxZoom:8});else if(b.length)map.setView(b[0],8);
+})();</script>`;
+  return { html, js };
+}
+
 router.get('/pilots', (req, res) => {
   const q = req.query;
   const list = M.filterPilots(q);
+  const map = pilotMap(list);
   const qs = new URLSearchParams(Object.entries(q).filter(([k, v]) => v && k !== 'msg')).toString();
   res.send(layout({
-    title: 'Pilots', active: '/pilots', flash: flashOf(req), body: `
+    title: 'Pilots', active: '/pilots', flash: flashOf(req), head: LEAFLET_CSS, scripts: map.js, body: `
 <div class="head"><h1>Pilots <span class="count">${list.length}</span></h1>
 <div class="actions"><a class="btn ghost" href="/pilots.csv${qs ? '?' + qs : ''}">Export CSV</a> <a class="btn" href="/import">Add pilot</a></div></div>
 ${filterBar(q, '/pilots')}
+${map.html}
 <form id="bulk" method="get" action="/messages/new" class="bulkbar">
 <span data-selected-count>0 selected</span>
 <button name="mode" value="message">Message selected</button>
@@ -214,6 +246,7 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
 <label>Home base<input name="homeBase" value="${esc(p.homeBase)}"></label>
 <label>State<select name="state">${options(M.STATES, p.state, { blank: '—' })}</select></label>
 <label>Region<input name="region" value="${esc(p.region)}" placeholder="e.g. North Queensland"></label>
+<label>Map position <span class="sub">(optional – only if the map puts them in the wrong place)</span><input name="mapPos" value="${p.geo && p.geo.manual ? p.geo.lat + ', ' + p.geo.lng : ''}" placeholder="e.g. -32.43, 115.75 (from Google Maps)"></label>
 <label>Travel<select name="travel">${options(M.TRAVEL_OPTIONS, p.travel, { blank: '—' })}</select></label>
 <label class="inline"><input type="checkbox" name="partA"${p.partA ? ' checked' : ''}> Part A (sub-2 kg solar)</label>
 <label class="inline"><input type="checkbox" name="partB"${p.partB ? ' checked' : ''}> Part B (certified operator)</label>
@@ -246,7 +279,12 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
 router.post('/pilots/:id', (req, res) => {
   const b = req.body;
   const drones = [].concat(b.drones || []);
-  db.update('pilots', req.params.id, {
+  const before = db.get('pilots', req.params.id);
+  const pos = geo.parsePos(b.mapPos);
+  let geoField = {};
+  if (pos) geoField = { geo: { manual: true, ...pos } };
+  else if (before && before.geo && before.geo.manual && !String(b.mapPos || '').trim()) geoField = { geo: null }; // cleared: look it up again
+  db.update('pilots', req.params.id, { ...geoField,
     fullName: b.fullName, email: (b.email || '').toLowerCase().trim(), mobile: b.mobile, business: b.business, abn: b.abn,
     portfolio: b.portfolio, homeBase: b.homeBase, state: b.state, region: b.region, travel: b.travel,
     partA: bool(b.partA), partB: bool(b.partB), drones, dronesOther: b.dronesOther, phoneType: b.phoneType || '',

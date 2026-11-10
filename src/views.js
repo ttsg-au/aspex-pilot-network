@@ -17,11 +17,12 @@ const NAV = [
   ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/import', 'Add / import'], ['/backup', 'Backup'],
 ];
 
-function layout({ title, body, active = '', flash = '' }) {
+function layout({ title, body, active = '', flash = '', head = '', scripts = '' }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)} · Aspex Pilot Network</title>
 <link rel="stylesheet" href="/static/style.css">
+${head}
 </head><body>
 <header class="top"><div class="wrap topin">
 <a class="brand" href="/"><span class="dot"></span>Aspex <b>Pilot Network</b></a>
@@ -33,6 +34,7 @@ ${flash ? `<div class="flash">${esc(flash)}</div>` : ''}
 ${body}
 </main>
 <script src="/static/app.js"></script>
+${scripts}
 </body></html>`;
 }
 

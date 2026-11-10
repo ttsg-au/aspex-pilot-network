@@ -108,3 +108,11 @@ li.ok .pip,.pip.ok{background:#2e8b57;border-color:#2e8b57}
 li.part .pip,.pip.part{border-color:#d08a00;background:linear-gradient(90deg,#d08a00 50%,#fff 50%)}
 .sub .pip{margin-left:8px}
 @media(max-width:700px){.topin{gap:8px;padding:8px 0}.top nav{order:3;flex:1 0 100%;flex-wrap:nowrap;overflow-x:auto}.logout{margin-left:auto}}
+/* Pilot map */
+.mapcard summary{display:flex;align-items:baseline;gap:12px;cursor:pointer;list-style:none}
+.mapcard summary::-webkit-details-marker{display:none}
+.mapcard summary h2{margin:0}
+.mapcard summary h2::after{content:" ▾";font-size:.8em;color:#888}
+.mapcard:not([open]) summary h2::after{content:" ▸"}
+#pilotmap{height:420px;border-radius:8px;margin-top:12px;z-index:0}
+@media(max-width:600px){#pilotmap{height:320px}}
