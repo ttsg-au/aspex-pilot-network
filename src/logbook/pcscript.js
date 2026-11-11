@@ -57,7 +57,8 @@ Get-ChildItem -LiteralPath $archive -File | ForEach-Object { $have[$_.BaseName] 
 $found = 0; $copied = 0
 if ($devices.Count -eq 0) {
   Say ''
-  Say 'No controller found. To get new flights: plug the controller in by USB (drone and controller on), then run this again.' Yellow
+  Say 'No controller found. Plug the controller in by USB, switch the DRONE on as well and let it link, then run this again.' Yellow
+  Say '(With most DJI controllers the flight files only appear on the PC while the drone is switched on.)' Yellow
   Say 'Carrying on with any records already in the archive that the website does not have yet.' Yellow
 } else {
   Say ''; Say 'Step 1 of 2: copying from the controller' Cyan
@@ -91,6 +92,12 @@ if ($devices.Count -eq 0) {
     }
   }
   Say "  $found records on the controller, $copied new."
+  if ($found -eq 0) {
+    Say ''
+    Say 'The controller is connected but no flight records were found.' Yellow
+    Say 'Switch the DRONE on and let it link to the controller - with most DJI controllers the flight files' Yellow
+    Say 'only appear on the PC while the drone is on. Then run Import Flights again.' Yellow
+  }
 }
 
 # ---- 2. send the ones the website hasn't got ----
