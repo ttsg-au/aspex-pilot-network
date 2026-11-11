@@ -108,7 +108,7 @@ router.get('/pilots', (req, res) => {
   res.send(layout({
     title: 'Pilots', active: '/pilots', flash: flashOf(req), head: LEAFLET_CSS, scripts: map.js, body: `
 <div class="head"><h1>Pilots <span class="count">${list.length}</span></h1>
-<div class="actions"><a class="btn ghost" href="/pilots.csv${qs ? '?' + qs : ''}">Export CSV</a> <a class="btn" href="/import">Add pilot</a></div></div>
+<div class="actions"><a class="btn ghost" href="/settings/regions">Target regions</a> <a class="btn ghost" href="/pilots.csv${qs ? '?' + qs : ''}">Export CSV</a> <a class="btn" href="/import">Add pilot</a></div></div>
 ${filterBar(q, '/pilots')}
 ${map.html}
 <form id="bulk" method="get" action="/messages/new" class="bulkbar">

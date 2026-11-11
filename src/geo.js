@@ -24,6 +24,7 @@ const needsLookup = (p) => {
 
 async function lookup(q) {
   if (process.env.GEO_STUB) { // for local testing without internet
+    if (process.env.GEO_STUB.endsWith('.json')) { const t = require(process.env.GEO_STUB); const k = Object.keys(t).find(k => q.toLowerCase().startsWith(k.toLowerCase())); return k ? { lat: t[k][0], lng: t[k][1], label: k } : null; }
     const h = [...q].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
     return { lat: -25 - (h % 1000) / 100, lng: 120 + (h % 2900) / 100, label: q };
   }
@@ -74,4 +75,4 @@ function parsePos(s) {
   return lat < -8 && lat > -45 && lng > 110 && lng < 160 ? { lat, lng } : null;
 }
 
-module.exports = { refresh, queryFor, parsePos };
+module.exports = { refresh, queryFor, parsePos, lookup };

@@ -11,6 +11,8 @@ const { esc, fmtDate, fmtDateTime, layout, bare, options, badge, expiryBadge } =
 const router = express.Router();     // admin-only
 const publicRouter = express.Router();
 const flashOf = (req) => req.query.msg ? String(req.query.msg) : '';
+// Location screening of a brand-new registration (see src/screening.js). Required lazily to avoid a require loop.
+const screenNew = (id) => require('../screening').screen(id, (m) => require('./comms').startSend({ ...m, kind: 'auto' }));
 
 // ---------- Login ----------
 publicRouter.get('/login', (req, res) => {
@@ -49,6 +51,7 @@ publicRouter.post('/api/register', (req, res) => {
     if (!reg.email) return res.status(400).json({ ok: false, error: 'no email field found' });
     const { pilot, isNew } = intake.upsertFromRegistration(reg, 'website form');
     res.json({ ok: true, id: pilot.id, isNew });
+    if (isNew) screenNew(pilot.id).catch(e => console.error('Screening error:', e));
   } catch (e) {
     console.error('Webhook error:', e);
     res.status(500).json({ ok: false, error: e.message });
@@ -147,7 +150,12 @@ router.post('/import/email', (req, res) => {
   const reg = intake.parseNotificationEmail(req.body.text || '');
   if (!reg.email) return res.redirect('/import?msg=' + encodeURIComponent('Couldn’t find an “Email:” line in that text.'));
   const { pilot, isNew } = intake.upsertFromRegistration(reg, 'pasted email');
-  res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(isNew ? 'Pilot added from the email.' : 'Existing pilot updated from the email.'));
+  if (!isNew) return res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent('Existing pilot updated from the email.'));
+  screenNew(pilot.id).then(r => {
+    const msg = r.outcome === 'declined' ? 'Pilot added, then auto-declined: outside your target regions' + (r.emailed ? ' (polite email sent).' : ' (no state given, so no email).')
+      : r.outcome === 'review' ? 'Pilot added. Their town couldn\u2019t be placed on the map, so check their region by hand.' : 'Pilot added from the email.';
+    res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(msg));
+  }).catch(e => { console.error('Screening error:', e); res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent('Pilot added from the email.')); });
 });
 // Upload of seed-registrations.json: [{ receivedAt, text, state? }, ...]
 const multer = require('multer');

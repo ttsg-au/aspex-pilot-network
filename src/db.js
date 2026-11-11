@@ -14,7 +14,7 @@ const config = require('./config');
 
 const COLLECTIONS = [
   'pilots', 'qualifications', 'records', 'flightLogs',
-  'messages', 'jobs', 'jobResponses', 'registrations',
+  'messages', 'jobs', 'jobResponses', 'registrations', 'settings',
 ];
 
 const data = {};

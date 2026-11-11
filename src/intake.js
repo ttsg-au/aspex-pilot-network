@@ -56,7 +56,7 @@ function parseNotificationEmail(text) {
   const out = {};
   let current = null;
   for (const line of String(text).replace(/\r/g, '').split('\n')) {
-    const m = line.match(/^([A-Za-z][A-Za-z \-–]{1,40}):\s?(.*)$/);
+    const m = line.match(/^([A-Za-z][A-Za-z ,()?\/\-–]{1,50}):\s?(.*)$/);
     if (m && fieldFor(m[1])) {
       current = m[1];
       out[current] = m[2].trim();
