@@ -56,7 +56,7 @@ function jobsFor(u) {
   if (!u.pilotId) return [];
   const prog = progress(u.id);
   return linkedJobs().filter(x => assignedPilotIds(x.job.networkJobId).has(u.pilotId)).map(({ key, job, site }) => ({
-    key, name: job.name, start: job.start, end: job.end, purpose: job.purpose, status: job.status,
+    key, name: job.name, start: job.start, end: job.end, status: job.status,   // no client, ref, SiteMark link or notes
     dropboxUrl: job.dropboxUrl, swmsUrl: job.swmsUrl, capture: job.capture, basis: BASIS.independent,
     site: siteOut(site), progress: prog[key] || {},
     flights: matchFlights(u.id, job, site).map(flightOut),

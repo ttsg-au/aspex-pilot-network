@@ -83,7 +83,8 @@ async function renderJobNetwork(key) {
         <select id="nJob">${sel(netJobs.map(n => [n.id, `${n.title}${n.startDate ? ' · ' + dateOnly(n.startDate) : ''}`]), j.networkJobId, '— not shared —')}</select></label>
       <label class="full">Site SWMS (link to the document - applies to everyone on site)<span><div class="linkrow"><input data-n="swmsUrl" value="${esc(j.swmsUrl || '')}" placeholder="paste the SWMS link (e.g. Dropbox)"></div></span></label>
       <label class="full">Aspex capture settings for pilots<textarea data-n="capture" rows="3" placeholder="e.g. 70% forward / 30% side overlap, GSD 3.3 cm, terrain follow, max 6.7 m/s, irradiance over 600 W/m²">${esc(j.capture || '')}</textarea></label>
-      <div class="muted" style="grid-column:1/-1">Operating basis: <b>Independent operator</b> - pilots fly under their own accreditation and their own checklists; the work isn't carried out under an Aspex ReOC. They must accept this, and the SWMS, before the job opens for them.</div>
+      <div class="muted" style="grid-column:1/-1">Operating basis: <b>Independent operator</b> - pilots fly under their own accreditation and their own checklists; the work isn't carried out under an Aspex ReOC. They must accept this, and the SWMS, before the job opens for them.<br>
+        <b>What pilots see:</b> job name, dates, site name and boundary, the Dropbox folder, the SWMS and these capture settings. <b>Never shown:</b> the client, reference/PO, SiteMark link, site owner/O&amp;M, notes and your own flights.</div>
     </div>
     ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Complete</th></tr>
       ${net.pilots.map(p => {

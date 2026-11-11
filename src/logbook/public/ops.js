@@ -104,7 +104,7 @@ function renderJobEdit() {
     <h2>${esc(j.name || 'Untitled job')} <button class="btn sm danger" id="delJob">Delete job</button></h2>
     <div class="form">
       <label class="full">Job name<input data-f="name" value="${esc(j.name)}" placeholder="e.g. Walla Walla thermography Nov 2026"></label>
-      <label>Client (who engages you)<select data-f="clientId">${sel(clients, j.clientId, '— none —')}</select></label>
+      <label>Client (who engages you)${myRole === 'owner' ? ' <span class="pill">never shown to pilots</span>' : ''}<select data-f="clientId">${sel(clients, j.clientId, '— none —')}</select></label>
       <label>Site<select data-f="siteId">${sel(sites, j.siteId, '— none —')}</select></label>
       <label>Status<select data-f="status">${sel(JOB_STATUS.map(x => [x, x]), j.status || 'Planned')}</select></label>
       <label>Reference / PO<input data-f="ref" value="${esc(j.ref)}"></label>
