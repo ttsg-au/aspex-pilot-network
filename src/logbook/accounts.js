@@ -143,18 +143,22 @@ admin.get('/logbook-accounts', (req, res) => {
   const list = users().slice().sort((a, b) => (a.role === 'owner' ? 0 : 1) - (b.role === 'owner' ? 0 : 1) || a.name.localeCompare(b.name));
   const count = (u) => db.all('lbFlights').filter(f => f.uid === u.id && f.isFlight).length;
   const unowned = db.all('lbFlights').filter(f => !f.uid).length;
-  const link = req.query.link ? `<div class="flash"><b>Invite sent.</b> If the email doesn't arrive, send them this link yourself (works for ${INVITE_DAYS} days):<br><input readonly style="width:100%" value="${esc(req.query.link)}" onclick="this.select()"></div>` : '';
+  const msg = { saved: 'Saved.', deleted: 'Account deleted.', taken: 'That email already has a logbook account.', bademail: 'That doesn\u2019t look like an email address.' }[req.query.m];
+  const link = msg ? `<div class="flash${['taken', 'bademail'].includes(req.query.m) ? ' bad' : ''}">${msg}</div>` : req.query.link ? `<div class="flash"><b>Invite sent.</b> If the email doesn't arrive, send them this link yourself (works for ${INVITE_DAYS} days):<br><input readonly style="width:100%" value="${esc(req.query.link)}" onclick="this.select()"></div>` : '';
   res.send(layout({ title: 'Logbook accounts', active: '/logbook/', flash: link, body: `
 <div class="head"><div><h1>Logbook accounts</h1><div class="sub">Each person logs in to their own flight logbook with their email and password. Give a network pilot access from their pilot page (“Give logbook access”).</div></div>
 <div class="actions"><a class="btn" href="/logbook/">Open my logbook</a></div></div>
 ${!list.some(u => u.role === 'owner') ? `<section class="card"><h2>Set up your own logbook account first</h2>
 <p>${unowned ? `Your logbook (${unowned} flight records) will move into this account.` : ''} You'll get an email to set your password.</p>
 <form method="post" action="/logbook-accounts/owner" class="grid"><label>Your name<input name="name" required></label><label>Your email<input type="email" name="email" required></label><div class="full"><button>Create my account</button></div></form></section>` : ''}
-<section class="card"><table><tr><th>Name</th><th>Email</th><th>Type</th><th>Status</th><th>Flights</th><th>Last login</th><th></th></tr>
-${list.map(u => `<tr><td>${u.pilotId ? `<a href="/pilots/${esc(u.pilotId)}">${esc(u.name)}</a>` : esc(u.name)}</td><td>${esc(u.email)}</td><td>${u.role === 'owner' ? 'You (Aspex)' : 'Network pilot'}</td>
+<section class="card"><table><tr><th colspan="2">Name and email</th><th>Type</th><th>Status</th><th>Flights</th><th>Last login</th><th></th></tr>
+${list.map(u => `<tr><td colspan="2"><form method="post" action="/logbook-accounts/${esc(u.id)}/edit" style="display:flex;gap:6px;align-items:center;margin:0">
+<input name="name" value="${esc(u.name)}" style="width:150px" required><input type="email" name="email" value="${esc(u.email)}" style="width:210px" required>
+<button class="ghost sm" title="Save name and email">Save</button>${u.pilotId ? ` <a href="/pilots/${esc(u.pilotId)}" class="sub">pilot record</a>` : ''}</form></td><td>${u.role === 'owner' ? 'You (Aspex)' : 'Network pilot'}</td>
 <td>${status(u)}</td><td>${count(u)}</td><td>${u.lastLogin ? fmtDateTime(u.lastLogin) : '<span class="sub">never</span>'}</td>
 <td><form method="post" action="/logbook-accounts/${esc(u.id)}/invite" style="display:inline"><button class="ghost sm">${u.pwHash ? 'Send password reset' : 'Resend invite'}</button></form>
-${u.role === 'owner' ? '' : `<form method="post" action="/logbook-accounts/${esc(u.id)}/${u.disabled ? 'enable' : 'disable'}" style="display:inline"><button class="ghost sm">${u.disabled ? 'Turn back on' : 'Turn off'}</button></form>`}</td></tr>`).join('') || '<tr><td colspan="7" class="sub">No accounts yet.</td></tr>'}
+${u.role === 'owner' ? '' : `<form method="post" action="/logbook-accounts/${esc(u.id)}/${u.disabled ? 'enable' : 'disable'}" style="display:inline"><button class="ghost sm">${u.disabled ? 'Turn back on' : 'Turn off'}</button></form>
+<form method="post" action="/logbook-accounts/${esc(u.id)}/delete" style="display:inline"><button class="danger sm" data-confirm="Delete the logbook account for ${esc(u.name || u.email)}?${count(u) ? ` Their ${count(u)} flights will be deleted too.` : ''}">Delete</button></form>`}</td></tr>`).join('') || '<tr><td colspan="7" class="sub">No accounts yet.</td></tr>'}
 </table></section>` }));
 });
 admin.post('/logbook-accounts/owner', async (req, res) => {
@@ -173,6 +177,7 @@ admin.post('/pilots/:id/logbook-invite', async (req, res) => {
   if (!p || !p.email) return res.redirect('/pilots/' + req.params.id);
   let u = users().find(x => x.pilotId === p.id) || byEmail(p.email);
   if (!u) u = createUser({ email: p.email, name: p.fullName, role: 'pilot', pilotId: p.id });
+  else if (u.pilotId === p.id && u.email !== normEmail(p.email) && !byEmail(p.email)) u = db.update('lbUsers', u.id, { email: normEmail(p.email) }); // pilot's email was corrected
   let link = '';
   try { link = await sendInvite(u); } catch (e) { link = makeLink(u); }
   res.redirect('/logbook-accounts?link=' + encodeURIComponent(link));
@@ -187,6 +192,30 @@ for (const act of ['disable', 'enable']) admin.post(`/logbook-accounts/:id/${act
   const u = db.get('lbUsers', req.params.id);
   if (u && u.role !== 'owner') db.update('lbUsers', u.id, { disabled: act === 'disable' });
   res.redirect('/logbook-accounts');
+});
+
+admin.post('/logbook-accounts/:id/edit', (req, res) => {
+  const u = db.get('lbUsers', req.params.id);
+  if (!u) return res.redirect('/logbook-accounts');
+  const email = normEmail(req.body.email);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.redirect('/logbook-accounts?m=bademail');
+  const other = byEmail(email);
+  if (other && other.id !== u.id) return res.redirect('/logbook-accounts?m=taken');
+  const ch = { name: String(req.body.name || '').slice(0, 120), email };
+  if (email !== u.email) Object.assign(ch, { inviteHash: '', inviteExp: 0 });   // old invite link stops working
+  db.update('lbUsers', u.id, ch);
+  res.redirect('/logbook-accounts?m=saved');
+});
+admin.post('/logbook-accounts/:id/delete', async (req, res) => {
+  const u = db.get('lbUsers', req.params.id);
+  if (!u || u.role === 'owner') return res.redirect('/logbook-accounts');
+  for (const f of db.all('lbFlights').filter(f => f.uid === u.id)) { if (f.trackFile) db.deleteFile(f.trackFile); }
+  db.removeWhere('lbFlights', f => f.uid === u.id);
+  db.removeWhere('lbOps', r => r.uid === u.id);
+  db.removeWhere('lbState', r => r.uid === u.id);
+  db.remove('lbUsers', u.id);
+  await db.flush();
+  res.redirect('/logbook-accounts?m=deleted');
 });
 
 // Button on a pilot's page.
