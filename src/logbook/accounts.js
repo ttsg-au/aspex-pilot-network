@@ -55,10 +55,12 @@ function requireUser(req, res, next) {
 }
 
 // ---------- invite / reset links ----------
-function makeLink(u) {
+// Links use the address the request came in on, so they work whatever BASE_URL says.
+const siteOf = (req) => `${req.protocol}://${req.get('host')}`;
+function makeLink(u, base) {
   const token = crypto.randomBytes(24).toString('base64url');
   db.update('lbUsers', u.id, { inviteHash: sha(token), inviteExp: Date.now() + INVITE_DAYS * 864e5 });
-  return `${config.baseUrl}/logbook/set-password?u=${u.id}&t=${token}`;
+  return `${base}/logbook/set-password?u=${u.id}&t=${token}`;
 }
 function linkUser(req) {
   const u = db.get('lbUsers', String(req.query.u || req.body?.u || ''));
@@ -67,12 +69,12 @@ function linkUser(req) {
   const a = Buffer.from(sha(t)), b = Buffer.from(u.inviteHash);
   return a.length === b.length && crypto.timingSafeEqual(a, b) ? u : null;
 }
-async function sendInvite(u, { reset = false } = {}) {
-  const link = makeLink(u);
+async function sendInvite(u, base, { reset = false } = {}) {
+  const link = makeLink(u, base);
   const first = (u.name || '').split(' ')[0] || 'there';
   const text = reset
     ? `Hi ${first},\n\nHere's the link to set a new password for your Aspex flight logbook. It works for ${INVITE_DAYS} days.\n\nIf you didn't ask for this, you can ignore this email.`
-    : `Hi ${first},\n\nYou've been given your own **Aspex flight logbook** - a private record of your flights, drones and batteries, built from your DJI flight records.\n\nClick below to set your password. The link works for ${INVITE_DAYS} days. After that, log in any time at ${config.baseUrl}/logbook/ with this email address.`;
+    : `Hi ${first},\n\nYou've been given your own **Aspex flight logbook** - a private record of your flights, drones and batteries, built from your DJI flight records.\n\nClick below to set your password. The link works for ${INVITE_DAYS} days. After that, log in any time at ${base}/logbook/ with this email address.`;
   await mail.send({ to: u.email, subject: reset ? 'Reset your Aspex flight logbook password' : 'Your Aspex flight logbook', text,
     buttons: [{ label: reset ? 'Set a new password' : 'Set your password', url: link, primary: true }] });
   return link;
@@ -131,7 +133,7 @@ pub.get('/logbook/forgot', (req, res) => res.send(page('Forgotten password', req
   : `<form method="post" action="/logbook/forgot"><label>Your email<input type="email" name="email" required></label><button>Email me a link</button></form>`)));
 pub.post('/logbook/forgot', async (req, res) => {
   const u = byEmail(req.body.email);
-  if (u && !u.disabled && auth.loginAllowed(req.ip)) { auth.noteFailedLogin(req.ip); try { await sendInvite(u, { reset: true }); } catch (e) { console.error('logbook reset email:', e.message); } }
+  if (u && !u.disabled && auth.loginAllowed(req.ip)) { auth.noteFailedLogin(req.ip); try { await sendInvite(u, siteOf(req), { reset: true }); } catch (e) { console.error('logbook reset email:', e.message); } }
   res.redirect('/logbook/forgot?sent=1');
 });
 
@@ -169,7 +171,7 @@ admin.post('/logbook-accounts/owner', async (req, res) => {
   const claimed = await store.claimUnowned(u.id);
   if (claimed.djiApiKey) db.update('lbUsers', u.id, { djiApiKey: claimed.djiApiKey });
   let link = '';
-  try { link = await sendInvite(u); } catch (e) { link = makeLink(u); }
+  try { link = await sendInvite(u, siteOf(req)); } catch (e) { link = makeLink(u, siteOf(req)); }
   res.redirect('/logbook-accounts?link=' + encodeURIComponent(link));
 });
 admin.post('/pilots/:id/logbook-invite', async (req, res) => {
@@ -179,13 +181,13 @@ admin.post('/pilots/:id/logbook-invite', async (req, res) => {
   if (!u) u = createUser({ email: p.email, name: p.fullName, role: 'pilot', pilotId: p.id });
   else if (u.pilotId === p.id && u.email !== normEmail(p.email) && !byEmail(p.email)) u = db.update('lbUsers', u.id, { email: normEmail(p.email) }); // pilot's email was corrected
   let link = '';
-  try { link = await sendInvite(u); } catch (e) { link = makeLink(u); }
+  try { link = await sendInvite(u, siteOf(req)); } catch (e) { link = makeLink(u, siteOf(req)); }
   res.redirect('/logbook-accounts?link=' + encodeURIComponent(link));
 });
 admin.post('/logbook-accounts/:id/invite', async (req, res) => {
   const u = db.get('lbUsers', req.params.id);
   let link = '';
-  if (u) { try { link = await sendInvite(u, { reset: !!u.pwHash }); } catch (e) { link = makeLink(u); } }
+  if (u) { try { link = await sendInvite(u, siteOf(req), { reset: !!u.pwHash }); } catch (e) { link = makeLink(u, siteOf(req)); } }
   res.redirect('/logbook-accounts' + (link ? '?link=' + encodeURIComponent(link) : ''));
 });
 for (const act of ['disable', 'enable']) admin.post(`/logbook-accounts/:id/${act}`, (req, res) => {
