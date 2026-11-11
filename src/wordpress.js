@@ -39,9 +39,17 @@ function saveSettings(changes) {
   else db.insert('settings', { ...DEFAULTS, ...changes });
 }
 
+// Login details: those saved on the Website logins page win; hosting secrets are the fallback.
+function creds() {
+  const s = getSettings(), env = config.wordpress;
+  const user = (s.wpUser || '').trim() || env.user;
+  const appPassword = (s.wpAppPassword || '').trim() || env.appPassword;
+  return { url: env.url, user, appPassword, configured: !!(user && appPassword), fromPage: !!(s.wpUser || s.wpAppPassword) };
+}
+
 async function api(path, { method = 'GET', body } = {}) {
-  const wp = config.wordpress;
-  if (!wp.configured) throw new Error('The WordPress login details aren’t set up yet (WP_USER and WP_APP_PASSWORD).');
+  const wp = creds();
+  if (!wp.configured) throw new Error('The WordPress login details aren’t set up yet. Enter them on Pilots → Website logins.');
   const auth = Buffer.from(wp.user + ':' + wp.appPassword.replace(/\s+/g, '')).toString('base64');
   let res;
   try {
@@ -66,8 +74,8 @@ function describe(status, data, text) {
   if (code === 'rest_not_logged_in' || code === 'rest_forbidden_context' || (status === 401 && !code))
     return 'WordPress didn’t receive the login at all (code ' + (code || status) + '). The web host is stripping the login from the request before WordPress sees it. This needs one line added to the site’s .htaccess file.';
   if (code === 'invalid_username' || code === 'invalid_email')
-    return 'WordPress doesn’t recognise WP_USER (code ' + code + '). Use the username shown greyed out at the top of Users → Profile.';
-  if (code === 'incorrect_password') return 'WordPress recognised the user but not the password (code incorrect_password). Make a new application password and paste it into WP_APP_PASSWORD.';
+    return 'WordPress doesn’t recognise that username (code ' + code + '). Use the username shown greyed out at the top of Users → Profile.';
+  if (code === 'incorrect_password') return 'WordPress recognised the user but not the password (code incorrect_password). Make a new application password in WordPress and paste it into the Application password box.';
   if (code === 'application_passwords_disabled' || code === 'application_passwords_disabled_for_user') return 'Application passwords are turned off on this site (code ' + code + '), by the host or a security plugin.';
   if (status === 401) return 'WordPress didn’t accept the login (code ' + code + ').';
   if (status === 403 || code === 'rest_cannot_create_user') return 'WordPress accepted the login, but that user isn’t allowed to create users. Use an Administrator account.';
@@ -106,4 +114,4 @@ async function createLogin(p) {
   }
 }
 
-module.exports = { getSettings, saveSettings, test, createLogin, DEFAULTS };
+module.exports = { getSettings, saveSettings, creds, test, createLogin, DEFAULTS };

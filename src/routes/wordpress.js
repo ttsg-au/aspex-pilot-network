@@ -11,19 +11,20 @@ const flashOf = (req) => req.query.msg ? String(req.query.msg) : '';
 
 router.get('/settings/website', (req, res) => {
   const s = WP.getSettings();
-  const wp = config.wordpress;
+  const wp = WP.creds();
   const done = db.all('pilots').filter(p => p.wpLogin).length;
   res.send(layout({ title: 'Website logins', active: '/pilots', flash: flashOf(req), body: `
 <div class="head"><div><a href="/pilots" class="muted">← Pilots</a><h1>Website logins</h1></div></div>
 <section class="card"><h2>Connection to ${esc(wp.url)}</h2>
-${wp.configured
-    ? `<p>Login details found for WordPress user <b>${esc(wp.user)}</b>. ${done} pilot${done === 1 ? ' has' : 's have'} a website login made by the app.</p>
-<form method="post" action="/settings/website/test"><button>Test the connection</button></form>`
-    : `<div class="flash bad">Not set up yet. Found: WP_USER ${wp.found.user ? '✓' : '✗'}, WP_APP_PASSWORD ${wp.found.appPassword ? '✓' : '✗'}.</div>
-<ol><li>In WordPress, go to <b>Users → Profile</b> (logged in as an Administrator) and scroll to <b>Application Passwords</b>.</li>
-<li>Type a name such as <i>Pilot app</i> and click <b>Add New Application Password</b>. Copy the password it shows (it's only shown once).</li>
-<li>In the pilot app's hosting <b>Secrets</b>, add <code>WP_USER</code> = your WordPress username and <code>WP_APP_PASSWORD</code> = that password, then republish.</li></ol>
-<p class="sub">If there's no Application Passwords section, your host or a security plugin has turned them off.</p>`}
+<p>${wp.configured ? `Using WordPress user <b>${esc(wp.user)}</b>. ${done} pilot${done === 1 ? ' has' : 's have'} a website login made by the app.` : '<b>Not set up yet.</b>'}</p>
+<form method="post" action="/settings/website/login" autocomplete="off">
+<label>WordPress username <span class="sub">(greyed out at the top of Users → Profile in WordPress, e.g. skyspec)</span>
+<input name="wpu" value="${esc(s.wpUser || '')}" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false"></label>
+<label>Application password <span class="sub">${s.wpAppPassword ? '(saved, leave blank to keep it)' : '(from Users → Profile → Application Passwords)'}</span>
+<input name="wpk" value="" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"></label>
+<button>Save and test</button>
+</form>
+<p class="sub">These boxes are deliberately plain text so your browser doesn't fill in a saved password. Check what's in them before saving.</p>
 </section>
 <form method="post" action="/settings/website" class="card">
 <h2>Pilot role</h2>
@@ -41,6 +42,19 @@ router.post('/settings/website', (req, res) => {
   const b = req.body;
   WP.saveSettings({ role: String(b.role || '').trim() || 'subscriber', subject: String(b.subject || '').trim() || WP.DEFAULTS.subject, body: String(b.body || '').trim() || WP.DEFAULTS.body });
   res.redirect('/settings/website?msg=' + encodeURIComponent('Saved.'));
+});
+
+router.post('/settings/website/login', async (req, res) => {
+  const user = String(req.body.wpu || '').trim();
+  const key = String(req.body.wpk || '').trim();
+  WP.saveSettings({ wpUser: user, ...(key ? { wpAppPassword: key } : {}) });
+  let msg;
+  try {
+    const t = await WP.test();
+    msg = t.canCreate ? `Saved. Connected as ${t.name} (${t.username}), and this account can create users. All good.`
+      : `Saved. Connected as ${t.name}, but this account can't create users. Use an Administrator account.`;
+  } catch (e) { msg = 'Saved, but the test failed: ' + e.message; }
+  res.redirect('/settings/website?msg=' + encodeURIComponent(msg));
 });
 
 router.post('/settings/website/test', async (req, res) => {
