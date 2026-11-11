@@ -63,8 +63,13 @@ async function api(path, { method = 'GET', body } = {}) {
 
 function describe(status, data, text) {
   const code = data && data.code;
-  if (status === 401 || code === 'rest_not_logged_in' || code === 'incorrect_password' || code === 'invalid_username')
-    return 'WordPress didn’t accept the login. Check WP_USER is your WordPress username and WP_APP_PASSWORD is an application password (not your normal password).';
+  if (code === 'rest_not_logged_in' || code === 'rest_forbidden_context' || (status === 401 && !code))
+    return 'WordPress didn’t receive the login at all (code ' + (code || status) + '). The web host is stripping the login from the request before WordPress sees it. This needs one line added to the site’s .htaccess file.';
+  if (code === 'invalid_username' || code === 'invalid_email')
+    return 'WordPress doesn’t recognise WP_USER (code ' + code + '). Use the username shown greyed out at the top of Users → Profile.';
+  if (code === 'incorrect_password') return 'WordPress recognised the user but not the password (code incorrect_password). Make a new application password and paste it into WP_APP_PASSWORD.';
+  if (code === 'application_passwords_disabled' || code === 'application_passwords_disabled_for_user') return 'Application passwords are turned off on this site (code ' + code + '), by the host or a security plugin.';
+  if (status === 401) return 'WordPress didn’t accept the login (code ' + code + ').';
   if (status === 403 || code === 'rest_cannot_create_user') return 'WordPress accepted the login, but that user isn’t allowed to create users. Use an Administrator account.';
   if (code === 'rest_invalid_param' && /role/i.test(text)) return 'WordPress doesn’t recognise the role set in Website logins settings. Check the role’s exact name.';
   if (status === 404) return 'The WordPress REST API wasn’t found at this address. Check WP_URL.';
