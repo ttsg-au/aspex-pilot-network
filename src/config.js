@@ -20,11 +20,14 @@ function hashOnce(pw) {
   const salt = crypto.randomBytes(16).toString('hex');
   return `scrypt$${salt}$${crypto.scryptSync(pw, salt, 64).toString('hex')}`;
 }
+let learnedBase = '';
 module.exports = {
   ROOT,
   port: Number(env.PORT || 3000),
-  // Public address of this app, used in email links (e.g. https://pilots.aspex.com.au)
-  baseUrl: (env.BASE_URL || 'http://localhost:3000').replace(/\/$/, ''),
+  // Public address of this app, used in email links. The app learns it from the address you
+  // use when logged in (see app.js), so links always work even if BASE_URL is wrong or not set.
+  get baseUrl() { return learnedBase || (env.BASE_URL || 'http://localhost:3000').replace(/\/$/, ''); },
+  learnBase(origin) { if (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(origin)) learnedBase = origin.toLowerCase(); },
   dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
   uploadDir: env.UPLOAD_DIR || path.join(ROOT, 'data', 'uploads'),
   sessionSecret: env.SESSION_SECRET || 'change-me-' + ROOT,

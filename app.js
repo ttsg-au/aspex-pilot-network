@@ -25,6 +25,8 @@ let dbError = null;
 app.use((req, res, next) => dbError && req.path !== '/health'
   ? res.status(503).send('The pilot network app can\u2019t reach its database right now. Check the MySQL settings in the hosting secrets and the runtime logs, then restart the app.')
   : next());
+// Learn this app's public address from requests made while you're logged in (used in email links).
+app.use((req, res, next) => { if (auth.readSession(req)) config.learnBase(`${req.protocol}://${req.get('host')}`); next(); });
 app.use('/static', express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 app.use('/static/leaflet', express.static(path.join(path.dirname(require.resolve('leaflet/package.json')), 'dist'), { maxAge: '7d' }));
 
