@@ -23,6 +23,7 @@ function merge(text, p) {
     .replace(/\{name\}/g, p.fullName || '')
     .replace(/\{state\}/g, p.state || '')
     .replace(/\{home_base\}/g, p.homeBase || '')
+    .replace(/\{email\}/g, p.email || '')
     .replace(/\{missing\}/g, missingItems(p));
 }
 
@@ -119,7 +120,7 @@ ${config.mailDryRun ? '<div class="flash warn">Test mode: emails are being saved
 <div class="tablewrap"><table class="list"><thead><tr><th>Subject</th><th>Type</th><th>To</th><th>Sent</th><th>Status</th></tr></thead><tbody>
 ${list.map(m => {
     const sent = m.recipients.filter(r => r.status === 'sent').length, failed = m.recipients.filter(r => r.status === 'failed').length;
-    return `<tr><td><a href="/messages/${m.id}"><b>${esc(m.subject)}</b></a></td><td>${badge({ message: 'Message', job: 'Job call-out', reminder: 'Reminder', auto: 'Auto reply' }[m.kind] || m.kind)}</td>
+    return `<tr><td><a href="/messages/${m.id}"><b>${esc(m.subject)}</b></a></td><td>${badge({ message: 'Message', job: 'Job call-out', reminder: 'Reminder', auto: 'Auto reply', login: 'Website login' }[m.kind] || m.kind)}</td>
 <td>${m.recipients.length === 1 ? esc(m.recipients[0].name) : m.recipients.length + ' pilots'}</td><td class="sub">${fmtDateTime(m.createdAt)}</td>
 <td>${badge(sent + ' sent', 'good')} ${failed ? badge(failed + ' failed', 'bad') : ''} ${m.recipients.length - sent - failed ? badge((m.recipients.length - sent - failed) + ' sending', 'warn') : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="empty">Nothing sent yet.</td></tr>'}

@@ -79,6 +79,17 @@ module.exports = {
       apiBase: env.GRAPH_API_BASE || 'https://graph.microsoft.com',
     };
   })(),
+  // WordPress (aspex.com.au) – creating member logins for pilots via the REST API and an application password.
+  wordpress: (() => {
+    const norm = (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const byNorm = {};
+    for (const [k, v] of Object.entries(env)) if (v) byNorm[norm(k)] = String(v).trim();
+    const pick = (...names) => names.map(n => byNorm[norm(n)]).find(v => v) || '';
+    const url = (pick('WP_URL', 'WORDPRESS_URL', 'WP_SITE') || 'https://aspex.com.au').replace(/\/+$/, '');
+    const user = pick('WP_USER', 'WP_USERNAME', 'WORDPRESS_USER', 'WORDPRESS_USERNAME');
+    const appPassword = pick('WP_APP_PASSWORD', 'WP_APPLICATION_PASSWORD', 'WORDPRESS_APP_PASSWORD', 'WORDPRESS_APPLICATION_PASSWORD');
+    return { url, user, appPassword, configured: !!(user && appPassword), found: { user: !!user, appPassword: !!appPassword } };
+  })(),
   get mailDryRun() { return !this.graph.configured && !this.smtp.pass; },
   expiryWarnDays: Number(env.EXPIRY_WARN_DAYS || 60),
 };

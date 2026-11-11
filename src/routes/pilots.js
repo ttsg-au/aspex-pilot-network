@@ -108,13 +108,14 @@ router.get('/pilots', (req, res) => {
   res.send(layout({
     title: 'Pilots', active: '/pilots', flash: flashOf(req), head: LEAFLET_CSS, scripts: map.js, body: `
 <div class="head"><h1>Pilots <span class="count">${list.length}</span></h1>
-<div class="actions"><a class="btn ghost" href="/settings/regions">Target regions</a> <a class="btn ghost" href="/pilots.csv${qs ? '?' + qs : ''}">Export CSV</a> <a class="btn" href="/import">Add pilot</a></div></div>
+<div class="actions"><a class="btn ghost" href="/settings/regions">Target regions</a> <a class="btn ghost" href="/settings/website">Website logins</a> <a class="btn ghost" href="/pilots.csv${qs ? '?' + qs : ''}">Export CSV</a> <a class="btn" href="/import">Add pilot</a></div></div>
 ${filterBar(q, '/pilots')}
 ${map.html}
 <form id="bulk" method="get" action="/messages/new" class="bulkbar">
 <span data-selected-count>0 selected</span>
 <button name="mode" value="message">Message selected</button>
 <button formaction="/jobs/pick">Send a job to selected</button>
+<button formaction="/wordpress/logins" formmethod="post" class="ghost">Create website logins</button>
 <span class="muted">or</span>
 <a href="/messages/new?${qs}">Message everyone in this list (${list.length})</a>
 </form>
@@ -180,7 +181,7 @@ ${q.expiresOn ? `<button formaction="/quals/${q.id}/remind" class="ghost">Email 
 <div>${agreementBadge(ag)}${ag && ag.version ? ' <span class="sub">' + esc(ag.version) + '</span>' : ''}</div>
 <div class="sub">${esc(p.business)}${p.abn && !(p.business || '').replace(/\s/g, '').includes(p.abn.replace(/\s/g, '')) ? ' · ABN ' + esc(p.abn) : ''}</div></div>
 <div class="actions"><a class="btn" href="/messages/new?ids=${p.id}">Email ${esc(M.firstName(p))}</a>
-<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> <a class="btn ghost" href="#delete">Delete…</a></div></div>
+<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> ${require('./wordpress').loginPanel(p)} <a class="btn ghost" href="#delete">Delete…</a></div></div>
 
 ${ag ? '' : `<div class="flash bad"><b>No signed contractor agreement.</b> ${esc(M.firstName(p))} can't be given work until it's signed. When it is, add it under Credentials → “Contractor agreement (signed)” with the date signed.</div>`}
 <section class="card"><h2>Pathway stage</h2>

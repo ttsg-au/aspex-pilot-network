@@ -41,6 +41,7 @@ app.use(main.router);
 app.use(pilots.router);
 app.use(comms.router);
 app.use(require('./src/routes/screening').router);
+app.use(require('./src/routes/wordpress').router);
 
 app.use((req, res) => res.status(404).send('Not found'));
 app.use((err, req, res, next) => {
