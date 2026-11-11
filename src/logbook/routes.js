@@ -19,6 +19,8 @@ router.use(accounts.pub);                                          // login, set
 router.use((req, res, next) => (!/^\/logbook(\/|$)/.test(req.path) || req.path.startsWith('/logbook/api/pc/')) ? next() : accounts.requireUser(req, res, next));
 const pcRouter = express.Router();
 const PUB = path.join(__dirname, 'public');
+// Changes on every restart (each publish), so browsers and GoDaddy's cache fetch the new scripts.
+const VERSION = Date.now().toString(36);
 const raw = (limit) => [express.raw({ type: () => true, limit }),
   (req, res, next) => Buffer.isBuffer(req.body) ? next() : fail(res, 'Send the file as raw data (Content-Type: application/octet-stream).')];
 const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e?.message || e));
@@ -26,9 +28,9 @@ const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e
 // ---------- pages ----------
 // The page uses relative links, so it must be served at /logbook/ (with the slash).
 router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
-  ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html')))
+  ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace(/\.(cjs|js)"><\/script>/g, `.$1?v=${VERSION}"></script>`))
   : res.redirect('/logbook/'));
-router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js|casa\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js|casa\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
 
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)
