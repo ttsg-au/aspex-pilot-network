@@ -110,7 +110,7 @@ function checkSummary(c) {
   if (l.length === CHECKS.length) return `<details><summary>All ${l.length} checklist items</summary>${l.map(esc).join('<br>')}</details>`;
   return l.map(esc).join('<br>');
 }
-let maintSn = null;
+let maintSn = null, maintEdit = null;
 function renderMaint(sn) {
   maintSn = sn;
   const a = inv.aircraft[sn] || {}, d = inspectionDue(sn), list = maintFor(sn);
@@ -122,7 +122,7 @@ function renderMaint(sn) {
       <span class="muted">${d.last ? `Last inspection ${dateOnly(d.last.date)} (${num(d.since, 1)} h ago)` : 'No inspection recorded yet'}</span>
       <label class="muted">Inspect every <input id="mEvery" type="number" min="1" style="width:60px" value="${d.every}"> flight hours</label>
     </div>
-    <details ${list.length ? '' : 'open'} style="padding:0 14px 12px"><summary class="btn sm">+ Record maintenance</summary>
+    <details id="mForm" ${list.length ? '' : 'open'} style="padding:0 14px 12px"><summary class="btn sm" id="mSummary">+ Record maintenance</summary>
       <div class="form2" style="margin-top:10px">
         <label>Date<input type="date" id="mDate" value="${new Date().toLocaleDateString('en-CA')}"></label>
         <label>Type<select id="mType">${MAINT_TYPES.map(t => `<option>${t}</option>`).join('')}</select></label>
@@ -133,7 +133,7 @@ function renderMaint(sn) {
         <div style="grid-column:1/-1"><button class="btn sm ghost" type="button" id="mAll">Tick all</button></div></div>
       <div class="form2"><label style="grid-column:span 2">Parts replaced (part, serial, reason)<textarea id="mParts" rows="2" placeholder="e.g. 2 x CCW propellers - chipped tips"></textarea></label>
         <label style="grid-column:span 2">Notes / findings<textarea id="mNotes" rows="2"></textarea></label></div>
-      <button class="btn" id="mSave">Save to maintenance log</button>
+      <button class="btn" id="mSave">Save to maintenance log</button> <button class="btn ghost" id="mCancel" hidden>Cancel editing</button>
     </details>
     <div class="scroll" style="max-height:none"><table>
       <tr><th>Date</th><th>Type</th><th class="n">Aircraft hours</th><th>Checked</th><th>Parts / firmware</th><th>Notes</th><th>By</th><th></th></tr>
@@ -141,12 +141,26 @@ function renderMaint(sn) {
         <td style="font-size:12px">${checkSummary(m.checks)}</td>
         <td style="font-size:12px">${esc(m.parts || '')}${m.firmware ? `<br>Firmware: ${esc(m.firmware)}` : ''}</td>
         <td style="font-size:12px">${esc(m.notes || '')}</td><td>${esc(m.by || '')}</td>
-        <td><button class="btn sm ghost" data-del="${id}" title="Delete this entry">×</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Nothing recorded yet</td></tr>'}
+        <td style="white-space:nowrap"><button class="btn sm ghost" data-edit="${id}">Edit</button> <button class="btn sm ghost" data-del="${id}" title="Delete this entry">×</button></td></tr>`).join('') || '<tr><td colspan="8" class="empty">Nothing recorded yet</td></tr>'}
     </table></div></div>`;
   const showChecks = () => { $('#mChecks').hidden = !/inspection/i.test($('#mType').value); };
   $('#mType').onchange = showChecks; showChecks();
   $('#mAll').onclick = () => box.querySelectorAll('[data-c]').forEach(c => c.checked = true);
-  $('#mClose').onclick = () => { maintSn = null; box.innerHTML = ''; };
+  $('#mClose').onclick = () => { maintSn = null; maintEdit = null; box.innerHTML = ''; };
+  const startEdit = (id) => {
+    const m = ops.maint[id]; if (!m) return;
+    maintEdit = id;
+    $('#mDate').value = m.date || ''; $('#mType').value = m.type || MAINT_TYPES[0]; $('#mBy').value = m.by || '';
+    $('#mFw').value = m.firmware || ''; $('#mParts').value = m.parts || ''; $('#mNotes').value = m.notes || '';
+    const ticked = new Set(checkList(m.checks));
+    box.querySelectorAll('[data-c]').forEach(c => c.checked = ticked.has(CHECKS[c.dataset.c]));
+    showChecks();
+    $('#mForm').open = true; $('#mSummary').textContent = 'Editing entry from ' + dateOnly(m.date);
+    $('#mSave').textContent = 'Save changes'; $('#mCancel').hidden = false;
+    $('#mForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => startEdit(b.dataset.edit));
+  $('#mCancel').onclick = () => { maintEdit = null; renderMaint(sn); };
   $('#mEvery').onchange = async e => {
     const r = await fetch('api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ aircraft: { [sn]: { inspectEveryH: e.target.value } } }) });
     if (r.ok) { inv = await r.json(); toast('Saved'); renderDrones(); }
@@ -157,8 +171,9 @@ function renderMaint(sn) {
     const item = { sn, date, type, checks, parts: $('#mParts').value.trim(), firmware: $('#mFw').value.trim(), by: $('#mBy').value.trim(), notes: $('#mNotes').value.trim(), hoursAt: acHours(sn, date).toFixed(2) };
     if (!date) return toast('Pick a date');
     if (!checks && !item.parts && !item.firmware && !item.notes) return toast('Tick the checks done, or add parts, firmware or notes');
-    await saveOps({ maint: { ['m-' + Date.now().toString(36)]: item } }, 'Added to the maintenance log');
-    renderDrones();
+    const id = maintEdit || 'm-' + Date.now().toString(36);
+    await saveOps({ maint: { [id]: item } }, maintEdit ? 'Changes saved' : 'Added to the maintenance log');
+    maintEdit = null; renderDrones();
   };
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
     if (!confirm('Delete this maintenance entry?')) return;
