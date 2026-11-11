@@ -5,6 +5,46 @@
 
 let aspexJobs = [], myRole = '';
 
+// Site safety requirements a job can call for (ticked per job; shown to pilots as "required on site").
+const SAFETY = [
+  ['swms', '📄', 'Site SWMS read and followed'], ['induction', '🎓', 'Site induction completed'], ['whitecard', '🪪', 'White Card'],
+  ['signin', '📝', 'Sign in / out with site office'], ['boots', '👢', 'Safety footwear'], ['hivis', '🦺', 'Hi-vis (long sleeve or vest)'],
+  ['longs', '👖', 'Long sleeves and long pants'], ['glasses', '🕶️', 'Safety glasses (tinted)'], ['sun', '🧢', 'Sun protection - hat, sunscreen, sunglasses'],
+  ['hardhat', '⛑️', 'Hard hat'], ['gloves', '🧤', 'Gloves'], ['cones', '🚧', 'Traffic cones to mark the landing area'],
+  ['pad', '🎯', 'Landing pad'], ['firstaid', '🩹', 'First aid kit incl. snake-bite bandages'], ['water', '💧', 'Plenty of water / heat stress plan'],
+  ['fire', '🧯', 'Fire extinguisher + LiPo battery bag'], ['comms', '📞', 'Phone/UHF + site emergency contacts'], ['insects', '🦟', 'Insect repellent'],
+  ['vehicle', '🚗', 'Site vehicle rules (speed limit, beacon/flag)'], ['electrical', '⚡', "Electrical hazard - don't touch panels, inverters, cabling; stay out of HV yards"],
+  ['lone', '👤', 'Lone worker check-ins'], ['observer', '👀', 'Visual observer'],
+];
+const safetyList = j => (j.safety || '').split('|').filter(k => SAFETY.some(s => s[0] === k));
+function safetyView(j) {
+  const on = new Set(safetyList(j));
+  if (!on.size && !j.safetyNotes && !j.siteContactPhone) return '';
+  return `<div class="safety-view">
+    ${j.siteContactName || j.siteContactPhone ? `<div class="contact">📞 <b>Site contact:</b> ${esc(j.siteContactName || '')} ${j.siteContactPhone ? `<a href="tel:${esc(j.siteContactPhone.replace(/\s/g, ''))}">${esc(j.siteContactPhone)}</a>` : ''}</div>` : ''}
+    ${on.size ? `<b>Required on site</b><div class="sicons">${SAFETY.filter(s => on.has(s[0])).map(s => `<span class="sicon"><span>${s[1]}</span>${esc(s[2])}</span>`).join('')}</div>` : ''}
+    ${j.safetyNotes ? `<div class="muted" style="white-space:pre-wrap;margin-top:6px">${esc(j.safetyNotes)}</div>` : ''}</div>`;
+}
+// Editor inside the job form (your jobs, or a pilot's own jobs).
+function safetyEditor(j, key) {
+  const on = new Set(safetyList(j));
+  return `<h4>Site safety and contact</h4>
+    <div class="form" style="padding:0 0 8px">
+      <label>Site contact (usually the O&amp;M manager)<input data-f="siteContactName" value="${esc(j.siteContactName || '')}" placeholder="name"></label>
+      <label>Site contact phone<input data-f="siteContactPhone" value="${esc(j.siteContactPhone || '')}" placeholder="04xx xxx xxx"></label>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">Tick what's required on this site${myRole === 'owner' ? ' - network pilots see these on the job' : ''}:</div>
+    <div class="sicons edit">${SAFETY.map(s => `<label class="sicon${on.has(s[0]) ? ' on' : ''}"><input type="checkbox" data-safety="${s[0]}"${on.has(s[0]) ? ' checked' : ''}><span>${s[1]}</span>${esc(s[2])}</label>`).join('')}</div>
+    <label class="full" style="display:block;margin-top:8px;font-size:12px;color:var(--muted)">Other site requirements<textarea data-f="safetyNotes" rows="2" style="width:100%" placeholder="e.g. amber beacon on vehicles, report to the O&M office on arrival, no access to block 7">${esc(j.safetyNotes || '')}</textarea></label>`;
+}
+function bindSafety(root, key) {
+  root.querySelectorAll('[data-safety]').forEach(c => c.onchange = async () => {
+    c.closest('.sicon').classList.toggle('on', c.checked);
+    const val = [...root.querySelectorAll('[data-safety]:checked')].map(x => x.dataset.safety).join('|');
+    await saveOps({ jobs: { [key]: { safety: val } } });
+  });
+}
+
 async function loadAspexJobs() {
   try { aspexJobs = (await (await fetch('api/aspex-jobs')).json()).jobs || []; } catch { aspexJobs = []; }
   const btn = document.querySelector('nav.tabs button[data-v=aspex]');
@@ -29,6 +69,7 @@ function renderAspex() {
         ${p.completeAt ? '<span class="pill ok">Flying complete</span>' : acked ? '<span class="pill">Accepted</span>' : '<span class="pill warn">Please read and accept</span>'}</h2>
       <div style="padding:12px 14px">
         <div class="basis"><b>Operating basis: ${esc(j.basis.label)}.</b> ${esc(j.basis.text)}</div>
+        ${safetyView(j)}
         ${acked ? `<p class="muted" style="margin:8px 0 0">You accepted this on ${dateOnly(p.ackAt)}.</p>` : `
           <div class="acks">${j.basis.acks.map((a, k) => `<label><input type="checkbox" data-ack="${k}"> ${esc(a)}</label>`).join('')}</div>
           ${j.swmsUrl ? `<p><a class="btn sm ghost" href="${esc(j.swmsUrl)}" target="_blank" rel="noopener">Open the site SWMS</a></p>` : '<p class="pill warn">The SWMS hasn’t been attached yet - Aspex will add it.</p>'}

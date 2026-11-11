@@ -74,9 +74,22 @@ function renderMe() {
       <label>RePL expiry (if any)<input type="date" data-p="replExpiry" value="${esc(me.replExpiry || '')}"></label>
       <label style="grid-column:span 2">RePL category / ratings (e.g. multirotor up to 25 kg, aeroplane)<input data-p="replClass" value="${esc(me.replClass || '')}"></label>
       <label style="grid-column:span 2">Other qualifications (AROC, night, EVLOS/BVLOS approvals…)<textarea data-p="otherQuals" rows="3">${esc(me.otherQuals || '')}</textarea></label>
+      <label>Insurance expiry<input type="date" data-p="insuranceExpiry" value="${esc(me.insuranceExpiry || '')}"></label>
+      <label>Weekly reminder email<select data-p="remindersOff"><option value=""${me.remindersOff ? '' : ' selected'}>On - Mondays, when something is due</option><option value="1"${me.remindersOff ? ' selected' : ''}>Off</option></select></label>
       <label>Usual operation type<select data-p="defaultOpType">${OPS3.map(o => `<option${o === (me.defaultOpType || 'VLOS') ? ' selected' : ''}>${o}</option>`).join('')}</select></label>
     </div>
+    <div style="padding:0 14px 14px"><b>Coming up</b> <span class="muted">- what your Monday email will include</span>
+      <div id="remList" class="muted" style="margin-top:6px">Checking…</div>
+      <button class="btn sm ghost" id="remSend" style="margin-top:8px">Email me this now</button></div>
     <div class="note">Totals in this logbook: ${num(flights.length)} flights, ${hrs(mins)} hours, of which ${hrs(flights.reduce((s, f) => s + nightMin(f), 0))} h at night. Flights where you set someone else as pilot in command are not counted in your remote pilot log.</div></div>`;
+  fetch('api/reminders').then(r => r.json()).then(it => {
+    const all3 = [['Licences and paperwork', it.paperwork], ['Drones', it.drones], ['Batteries', it.batteries]].filter(x => x[1].length);
+    $('#remList').innerHTML = all3.length ? all3.map(([t, l]) => `<div style="margin-top:6px"><b style="color:var(--ink)">${t}</b>${l.map(x => `<div>${x.level === 'red' ? '🔴' : '🟠'} ${esc(x.text)}</div>`).join('')}</div>`).join('') : 'Nothing due - no email this week.';
+  }).catch(() => { $('#remList').textContent = ''; });
+  $('#remSend').onclick = async () => {
+    const r = await fetch('api/reminders/send', { method: 'POST' });
+    toast(r.ok ? `Sent to ${(await r.json()).to}` : await r.text(), 3000);
+  };
   $('#v-me').querySelectorAll('[data-p]').forEach(el => el.onchange = async () => {
     const r = await fetch('api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [el.dataset.p]: el.value.trim() }) });
     if (r.ok) { me = { ...me, ...(await r.json()) }; toast('Saved'); } else toast('Could not save');

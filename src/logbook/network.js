@@ -58,6 +58,7 @@ function jobsFor(u) {
   return linkedJobs().filter(x => assignedPilotIds(x.job.networkJobId).has(u.pilotId)).map(({ key, job, site }) => ({
     key, name: job.name, start: job.start, end: job.end, status: job.status,   // no client, ref, SiteMark link or notes
     dropboxUrl: job.dropboxUrl, swmsUrl: job.swmsUrl, capture: job.capture, basis: BASIS.independent,
+    siteContactName: job.siteContactName, siteContactPhone: job.siteContactPhone, safety: job.safety, safetyNotes: job.safetyNotes,
     site: siteOut(site), progress: prog[key] || {},
     flights: matchFlights(u.id, job, site).map(flightOut),
   }));

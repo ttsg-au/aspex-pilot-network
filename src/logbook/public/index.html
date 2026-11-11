@@ -64,6 +64,13 @@
   .acks { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; font-size: 13.5px; }
   .acks label, .days label { display: flex; gap: 8px; align-items: flex-start; }
   .days { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0; font-size: 13px; }
+  .sicons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .sicon { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 18px; font-size: 12.5px; background: #fff; }
+  .sicon > span { font-size: 17px; line-height: 1; }
+  .sicons.edit .sicon { cursor: pointer; opacity: .55; } .sicons.edit .sicon.on { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+  .sicons.edit input { display: none; }
+  .safety-view { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfb; font-size: 13.5px; }
+  .safety-view .contact { margin-bottom: 6px; }
   @media print {
     header, nav.tabs, .noprint, .drawer, #toast, .modal { display: none !important; }
     body { background: #fff; } main { padding: 0; } .panel { border: 0; box-shadow: none; }

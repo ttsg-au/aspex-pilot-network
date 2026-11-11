@@ -117,6 +117,7 @@ function renderJobEdit() {
       <label class="full">SiteMark project<span>${link('sitemarkUrl', 'paste the SiteMark link')}</span></label>
       <label class="full">Notes<textarea data-f="notes">${esc(j.notes)}</textarea></label>
     </div>
+    <div class="sub2">${safetyEditor(j, curJob)}</div>
     <div class="sub2">
       <h4>Flights in this job — ${st.fl.length} flights, ${hrs(st.mins)} h</h4>
       <table>${sessions(st.fl).map(s => `<tr><td>${dateOnly(s.day)}</td><td>${sessLabel(s)}</td><td class="n">${s.flights.length} flights</td><td class="n">${hrs(s.mins)} h</td>
@@ -131,6 +132,7 @@ function renderJobEdit() {
     </div>
     <div class="sub2" id="jobNet"></div>`;
   bindFields($('#jobEdit'), 'jobs', curJob);
+  bindSafety($('#jobEdit'), curJob);
   renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {

@@ -58,6 +58,7 @@ app.use((err, req, res, next) => {
 
 // Load the database first, then start taking requests.
 db.init().then(() => {
+  require('./src/logbook/reminders').start();   // Monday reminder emails for logbook accounts
   app.listen(config.port, () => {
     console.log(`Aspex Pilot Network running on port ${config.port} (${config.mailDryRun ? 'email TEST MODE' : 'email live'}, storage: ${db.mode()})`);
   });
