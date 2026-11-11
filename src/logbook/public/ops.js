@@ -15,7 +15,7 @@ const jobOf = f => ops.flightJob[f.sha256] || '';
 const dayOf = f => (f.startLocal || '').slice(0, 10);
 
 function setOps(o) {
-  ops = o; for (const k of ['clients', 'sites', 'jobs', 'flightJob']) ops[k] ||= {};
+  ops = o; for (const k of ['clients', 'sites', 'jobs', 'maint', 'flightJob']) ops[k] ||= {};
   computeMatches();
 }
 // each flight belongs to the nearest site whose boundary (plus margin) contains its take-off point

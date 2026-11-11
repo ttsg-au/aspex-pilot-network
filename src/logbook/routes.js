@@ -28,7 +28,7 @@ const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e
 router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
   ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html')))
   : res.redirect('/logbook/'));
-router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js|casa\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, req.params[0]))));
 
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)
@@ -37,11 +37,14 @@ router.get('/logbook/api/inventory', (req, res) => res.json(store.inventory(req.
 router.post('/logbook/api/inventory', (req, res) => res.json(store.saveInventory(req.lb.id, req.body || {})));
 router.get('/logbook/api/ops', (req, res) => res.json(store.ops(req.lb.id)));
 router.post('/logbook/api/ops', express.json({ limit: '2mb' }), (req, res) => res.json(store.saveOps(req.lb.id, req.body || {})));
-router.post('/logbook/api/flights/:sha', (req, res) => {          // pilot / notes on one flight
+router.post('/logbook/api/flights/:sha', (req, res) => {          // CASA fields and notes on one flight
   const f = store.flightBySha(req.lb.id, req.params.sha);
   if (!f) return fail(res, 'no such flight', 404);
   const b = req.body || {}, ch = {};
-  for (const k of ['pilot', 'notes']) if (k in b) ch[k] = store.clean(b[k], k === 'notes' ? 2000 : 120);
+  const LIM = { pic: 120, otherPilot: 120, opType: 5, serviceable: 3, defect: 2000, notes: 2000 };
+  for (const [k, n] of Object.entries(LIM)) if (k in b) ch[k] = store.clean(b[k], n);
+  if (ch.opType && !['VLOS', 'EVLOS', 'BVLOS'].includes(ch.opType)) delete ch.opType;
+  if (ch.serviceable && !['yes', 'no'].includes(ch.serviceable)) delete ch.serviceable;
   res.json(store.publicFlight(db.update('lbFlights', f.id, ch)));
 });
 router.post('/logbook/api/sites/:id/kml', raw('20mb'), (req, res) => {
@@ -84,6 +87,14 @@ router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-
     if (r.status !== 'already had') store.noteUpload(req.lb.id, line);
     res.json({ ...line, summary: summary(r) });
   } catch (e) { fail(res, e, 500); }
+});
+// The logbook owner's own pilot details (remote pilot log header).
+const PROFILE = { fullName: 120, arn: 20, replNo: 40, replClass: 200, replExpiry: 10, otherQuals: 1000, defaultOpType: 5 };
+router.get('/logbook/api/profile', (req, res) => res.json({ fullName: req.lb.name, ...(req.lb.profile || {}) }));
+router.post('/logbook/api/profile', (req, res) => {
+  const p = { ...(req.lb.profile || {}) }, b = req.body || {};
+  for (const [k, n] of Object.entries(PROFILE)) if (k in b) p[k] = store.clean(b[k], n);
+  res.json(db.update('lbUsers', req.lb.id, { profile: p }).profile);
 });
 router.get('/logbook/api/settings', (req, res) => {
   const u = req.lb;

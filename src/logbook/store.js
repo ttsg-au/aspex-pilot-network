@@ -82,7 +82,7 @@ function inventory(uid) {
   }
   return inv;
 }
-const INV_FIELDS = [['aircraft', ['code', 'registration', 'status', 'notes']], ['batteries', ['code', 'source', 'status', 'notes']], ['payloads', ['code', 'type', 'status', 'notes']]];
+const INV_FIELDS = [['aircraft', ['code', 'registration', 'status', 'notes', 'inspectEveryH']], ['batteries', ['code', 'source', 'status', 'notes']], ['payloads', ['code', 'type', 'status', 'notes']]];
 function saveInventory(uid, b) {
   const cur = inventory(uid);
   for (const [kind, fields] of INV_FIELDS) {
@@ -102,13 +102,15 @@ const OPS_FIELDS = {
   sites: { name: 120, owner: 120, om: 120, marginM: 10, notes: 2000 },
   jobs: { name: 160, clientId: 48, siteId: 48, status: 30, ref: 80, purpose: 200, operator: 160, opType: 10,
     dropboxUrl: 600, sitemarkUrl: 600, start: 10, end: 10, notes: 4000 },
+  // drone maintenance log: inspections (with ticked checklist), parts replaced, firmware updates, repairs
+  maint: { sn: 30, date: 10, type: 40, checks: 3000, parts: 1000, firmware: 300, by: 120, notes: 4000, hoursAt: 12 },
 };
 const safeKey = (k) => /^[a-z0-9-]{1,48}$/.test(k) ? k : null;
 const opsId = (uid, kind, key) => h40(uid + ':' + kind + ':' + key);
 const opsDoc = (uid, kind, key) => db.get('lbOps', opsId(uid, kind, key));
 
 function ops(uid) {
-  const o = { clients: {}, sites: {}, jobs: {}, flightJob: {} };
+  const o = { clients: {}, sites: {}, jobs: {}, maint: {}, flightJob: {} };
   for (const r of db.all('lbOps')) if (r.uid === uid && o[r.kind]) o[r.kind][r.key] = r.item;
   for (const f of flights(uid)) if (f.jobId && o.jobs[f.jobId]) o.flightJob[f.sha256] = f.jobId;
   return o;

@@ -158,7 +158,8 @@ function kml(f, geojson) {
 function csv(rows) {
   const cols = [
     ['Flight no', 'flightNo'], ['Date / take-off', 'startLocal'], ['Landing', 'endLocal'], ['Minutes', 'durationMin'],
-    ['Flight?', r => (r.isFlight ? 'yes' : 'no take-off')], ['Pilot', 'pilot'],
+    ['Flight?', r => (r.isFlight ? 'yes' : 'no take-off')], ['Pilot in command', r => r.pic || r.pilot || ''], ['Operation', r => r.opType || ''],
+    ['Serviceable after', r => r.serviceable || ''], ['Defect', 'defect'],
     ['Take-off lat', 'takeoffLat'], ['Take-off lon', 'takeoffLon'], ['Distance km', 'distanceKm'],
     ['Max height m', 'maxHeightM'], ['Photos', 'photos'], ['Aircraft', 'aircraftModel'],
     ['Aircraft SN', 'aircraftSn'], ['Battery SN', 'batterySn'], ['Battery start %', 'batteryStartPct'], ['Battery end %', 'batteryEndPct'],

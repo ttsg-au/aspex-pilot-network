@@ -204,7 +204,7 @@ function renderDrones() {
   const acs = Object.entries(inv.aircraft);
   $('#iv-drones').innerHTML = `<div class="panel"><h2>Drones <span class="hint">new drones appear here automatically the first time they fly</span></h2>
     <div class="scroll" style="max-height:none"><table>
-      <tr><th>Code / name</th><th>Model</th><th>Serial</th><th>CASA registration</th><th>Status</th><th class="n">Flights</th><th class="n">Hours</th><th>First flown</th><th>Last flown</th><th>Controllers seen</th><th style="width:26%">Notes</th></tr>
+      <tr><th>Code / name</th><th>Model</th><th>Serial</th><th>CASA registration</th><th>Status</th><th>Maintenance</th><th class="n">Flights</th><th class="n">Hours</th><th>First flown</th><th>Last flown</th><th>Controllers seen</th><th style="width:26%">Notes</th></tr>
       ${acs.map(([sn, a]) => {
         const fl = flightsOf('aircraftSn', sn), rcs = [...new Set(fl.map(f => f.rcSn).filter(Boolean))];
         return `<tr class="${a.status === 'Retired' ? 'retired' : ''}" data-kind="aircraft" data-sn="${esc(sn)}">
@@ -212,12 +212,15 @@ function renderDrones() {
           <td>${esc(model(a.model || fl[0]?.aircraftModel))}${a.appName ? `<span class="sn-sub">${esc(a.appName)}</span>` : ''}</td><td class="sn">${esc(sn)}</td>
           <td><input class="r" data-f="registration" value="${esc(a.registration)}" placeholder="RPA rego"></td>
           <td><select data-f="status">${opts(AC_STATUS, a.status || 'In service')}</select></td>
+          <td style="white-space:nowrap">${fl.length ? dueBadge(sn) : ''} <button class="btn sm ghost" data-maint="${esc(sn)}">Log / view</button></td>
           <td class="n">${fl.length}</td><td class="n">${hrs(fl.reduce((s, f) => s + (f.durationMin || 0), 0))}</td><td>${dateOnly(fl[0]?.startLocal)}</td><td>${dateOnly(fl[fl.length - 1]?.startLocal)}</td>
           <td class="sn" style="font-size:11.5px">${rcs.map(esc).join('<br>') || '–'}</td>
           <td><input class="notes" data-f="notes" value="${esc(a.notes)}"></td></tr>`;
       }).join('') || '<tr><td class="empty">No drones yet</td></tr>'}
-    </table></div></div>`;
+    </table></div></div><div id="maintBox"></div>`;
   bindSave($('#iv-drones'));
+  $('#iv-drones').querySelectorAll('[data-maint]').forEach(b => b.onclick = () => { renderMaint(b.dataset.maint); $('#maintBox').scrollIntoView({ behavior: 'smooth' }); });
+  if (maintSn) renderMaint(maintSn);
 }
 
 const PAYLOAD_TYPES = ['Integrated camera', 'Thermal camera', 'RGB camera', 'Multispectral', 'LiDAR', 'Zoom camera', 'Other'];

@@ -48,6 +48,24 @@
   tr.nf td { color: var(--muted); font-style: italic; }
   .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px; background: var(--accent-soft); color: var(--accent); }
   .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.bad { background: #fde8e6; color: #b42318; } .pill.ok { background: var(--accent-soft); color: var(--accent); }
+  .form2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 14px; }
+  .form2 label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .form2 input, .form2 select, .form2 textarea, .grid.casa input, .grid.casa select { font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink, #111); }
+  .grid.casa label { padding: 8px 12px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 3px; }
+  .grid.casa label:nth-child(3n) { border-right: 0; }
+  .checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 4px 18px; margin: 12px 0; font-size: 13px; }
+  .checks[hidden] { display: none; }
+  table.sum { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12.5px; }
+  table.sum th, table.sum td { border: 1px solid var(--line); padding: 4px 7px; text-align: left; vertical-align: top; white-space: normal; }
+  table.sum td.n, table.sum th.n { text-align: right; }
+  .ptitle { display: none; }
+  @media print {
+    header, nav.tabs, .noprint, .drawer, #toast, .modal { display: none !important; }
+    body { background: #fff; } main { padding: 0; } .panel { border: 0; box-shadow: none; }
+    .panel > h2:first-child { display: none; } .ptitle { display: block; font-size: 16px; }
+    .view:not(#v-reports) { display: none !important; }
+  }
   .muted { color: var(--muted); }
 
   .bars { padding: 10px 14px; }
@@ -145,7 +163,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
 <header>
   <a href="/logbook-accounts" id="backLink" hidden style="color:#9fb3aa;text-decoration:none;font-size:12.5px">← Pilot Network</a>
   <h1>Flight Logbook</h1>
-  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="inventory">Inventory</button></nav>
+  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="inventory">Inventory</button><button data-v="reports">CASA logs</button><button data-v="me">Me</button></nav>
   <span class="sub" id="sub"></span>
   <span id="who" style="color:#9fb3aa;font-size:12.5px;margin:0 10px 0 auto"></span><button class="btn" id="importBtn">⤓ Import flights</button>
   <label id="nfLabel" style="margin-left:14px"><input type="checkbox" id="showNf"> show motor starts with no take-off</label>
@@ -188,6 +206,8 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   </div>
  </section>
 
+ <section class="view" id="v-reports" hidden></section>
+ <section class="view" id="v-me" hidden></section>
  <section class="view inv" id="v-inventory" hidden>
   <nav class="subtabs"><button data-iv="batteries" class="on">Batteries</button><button data-iv="drones">Drones</button><button data-iv="payloads">Payloads</button></nav>
   <div id="iv-batteries"></div>
@@ -244,6 +264,7 @@ async function load() {
   const [a, b, c] = await Promise.all([fetch('api/logbook').then(r => r.json()), fetch('api/inventory').then(r => r.json()), fetch('api/ops').then(r => r.json())]);
   all = a.flights || []; inv = b; inv.aircraft ||= {}; inv.batteries ||= {};
   setOps(c);
+  await loadMe();
   render(); renderInventory(); renderJobs(); renderSites();
 }
 
@@ -357,6 +378,7 @@ async function openFlight(f, tr) {
     </div>
     <div class="section">Site & job</div>
     <div id="dAssign"></div>
+    <div id="dCasa"></div>
     <div class="section">Flight</div>
     <div class="grid">
       ${cell('Take-off', esc(f.startLocal))}${cell('Landing', esc(f.endLocal))}${cell('Flight time', num(air(f), 1) + ' min')}
@@ -372,7 +394,7 @@ async function openFlight(f, tr) {
     </div>
     <div class="section">Source</div>
     <div class="muted sn" style="font-size:12px">${esc(f.file)}</div>`;
-  renderAssign(f);
+  renderAssign(f); renderCasa(f);
   $('#drawer').classList.add('open');
 
   if (!map) {
@@ -415,9 +437,9 @@ async function saveField(el) {
 
 function showView(v) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  for (const n of ['logbook', 'jobs', 'sites', 'inventory']) $('#v-' + n).hidden = v !== n;
+  for (const n of ['logbook', 'jobs', 'sites', 'inventory', 'reports', 'me']) $('#v-' + n).hidden = v !== n;
   $('#nfLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
-  if (v === 'inventory') renderInventory(); if (v === 'jobs') renderJobs(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'me') renderMe(); if (v === 'jobs') renderJobs(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
   if (v !== 'logbook') $('#dClose').click();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showView(b.dataset.v));
@@ -429,5 +451,6 @@ $('#showNf').onchange = render;
 </script>
 <script src="inv.js"></script>
 <script src="ops.js"></script>
+<script src="casa.js"></script>
 </body>
 </html>
