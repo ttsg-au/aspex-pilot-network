@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<title>Aspex Flight Logbook</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/leaflet/leaflet.css">
+<script src="/static/leaflet/leaflet.js"></script>
+<script src="geo.cjs"></script>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f5f2; --panel: #ffffff; --ink: #1d2320; --muted: #6a736e; --line: #e2e5e0;
+    --accent: #0f6e5a; --accent-soft: #e3f1ec; --warn: #b35a00; --warn-soft: #fbeedd; --bar: #2f8f77;
+    --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; background: #17211d; color: #fff; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .2px; }
+  header .sub { color: #9fb3aa; font-size: 12.5px; }
+  header label { font-size: 12.5px; color: #cfdbd5; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  main { padding: 18px 24px 40px; max-width: 1500px; margin: 0 auto; }
+
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 24px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .v small { font-size: 13px; font-weight: 400; color: var(--muted); }
+
+  .row3 { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,2.1fr) minmax(0,.9fr); gap: 12px; margin-bottom: 16px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .panel h2 { margin: 0; padding: 10px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+  .panel h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .scroll { max-height: 290px; overflow: auto; }
+
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 9px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { position: sticky; top: 0; background: #fafbf9; font-size: 12px; font-weight: 600; color: var(--muted); z-index: 1; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--ink); }
+  td.n, th.n { text-align: right; }
+  .sn { font-family: var(--mono); font-size: 12.5px; }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: var(--accent-soft); }
+  tr.sel td { background: var(--accent-soft); }
+  tr.nf td { color: var(--muted); font-style: italic; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px; background: var(--accent-soft); color: var(--accent); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .muted { color: var(--muted); }
+
+  .bars { padding: 10px 14px; }
+  .bar { display: grid; grid-template-columns: 62px 1fr 52px; gap: 8px; align-items: center; font-size: 12.5px; margin: 3px 0; }
+  .bar .track { background: #eef0ec; border-radius: 3px; height: 12px; overflow: hidden; }
+  .bar .fill { background: var(--bar); height: 100%; }
+  .bar .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+  .tools { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .tools input { flex: 0 0 280px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  .tools .count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+  .flights .scroll { max-height: none; }
+
+  /* flight detail drawer */
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--panel); box-shadow: -8px 0 30px rgba(0,0,0,.18);
+            transform: translateX(105%); transition: transform .2s ease; display: flex; flex-direction: column; z-index: 1000; }
+  .drawer.open { transform: none; }
+  .drawer .top { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .drawer .top h3 { margin: 0; font-size: 16px; }
+  .drawer .top .x { margin-left: auto; border: 0; background: none; font-size: 22px; cursor: pointer; color: var(--muted); }
+  #map { height: 380px; flex: 0 0 auto; background: #dfe4de; }
+  .drawer .body { overflow: auto; padding: 14px 18px 24px; }
+  .actions { display: flex; gap: 8px; margin-bottom: 14px; }
+  .btn { padding: 7px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; text-decoration: none; }
+  .btn.ghost { background: #fff; color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .grid div { padding: 8px 12px; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); }
+  .grid div:nth-child(3n) { border-right: 0; }
+  .grid .k { display: block; font-size: 11.5px; color: var(--muted); }
+  .grid .v { font-variant-numeric: tabular-nums; }
+  .section { margin: 16px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+  nav.tabs { display: flex; gap: 4px; margin-left: 12px; }
+  nav.tabs button { background: none; border: 0; color: #b9c8c1; font: inherit; font-size: 13.5px; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  nav.tabs button.on { background: #2c3a34; color: #fff; }
+  .view[hidden] { display: none !important; }
+  .code { font-weight: 600; }
+  .sn-sub { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .inv input, .inv select { font: inherit; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+  .inv input.c { width: 90px; font-weight: 600; } .inv input.r { width: 120px; } .inv input.notes { width: 100%; min-width: 220px; }
+  .inv td { vertical-align: middle; }
+  .st { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--accent); }
+  .st.Watch, .st.Suspect, .st.Grounded { background: var(--warn); } .st.Retired { background: #9aa39e; }
+  tr.retired td { color: var(--muted); }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #17211d; color: #fff; padding: 7px 16px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity .2s; z-index: 2000; }
+  #toast.show { opacity: 1; }
+  .invgrid { display: grid; gap: 14px; }
+  .note { padding: 10px 14px; color: var(--muted); font-size: 12.5px; }
+  .btn.sm { padding: 3px 10px; font-size: 12.5px; margin-left: auto; }
+  header .btn { border-color: #3d8f78; }
+  .split { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 14px; align-items: start; }
+  .list .it { padding: 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .list .it:hover, .list .it.on { background: var(--accent-soft); }
+  .list .it b { font-weight: 600; } .list .it .s { color: var(--muted); font-size: 12.5px; }
+  .form { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 14px; padding: 14px; }
+  .form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .form label.full { grid-column: 1 / -1; }
+  .form input, .form select, .form textarea { font: inherit; color: var(--ink); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+  .form textarea { min-height: 70px; resize: vertical; }
+  .linkrow { display: flex; gap: 6px; } .linkrow input { flex: 1; }
+  .sub2 { padding: 4px 14px 14px; } .sub2 h4 { margin: 14px 0 6px; font-size: 13px; }
+  .facts { display: flex; gap: 22px; flex-wrap: wrap; padding: 0 14px 10px; font-size: 13px; }
+  .facts b { font-size: 18px; display: block; }
+  #siteMap { height: 430px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .drop { margin: 0 14px 12px; border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--muted); cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .warnbox { margin: 12px 14px; padding: 10px 12px; border-radius: 6px; background: var(--warn-soft); color: #7a3e00; font-size: 13px; }
+  .asp { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .sev { display: inline-block; min-width: 74px; text-align: center; padding: 1px 6px; border-radius: 10px; font-size: 11.5px; margin-right: 8px; }
+  .sev.hi { background: #fbe1df; color: #a1261b; } .sev.md { background: var(--warn-soft); color: var(--warn); } .sev.lo { background: #eef0ec; color: var(--muted); }
+  .btn.danger { color: #a1261b; border-color: #e3b3ad; background: #fff; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 3000; }
+  .modal[hidden] { display: none; }
+  .modal .box { background: #fff; border-radius: 10px; width: min(760px, 94vw); padding: 18px 20px; }
+  .modal h3 { margin: 0 0 6px; } .modal pre { background: #17211d; color: #d7e6df; height: 320px; overflow: auto; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: #eef0ec; font-size: 11.5px; color: var(--muted); }
+  nav.subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  nav.subtabs button { font: inherit; padding: 6px 16px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
+  nav.subtabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .hdot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+  .hdot.green { background: #2e9e5b; } .hdot.amber { background: #e39a12; } .hdot.red { background: #d0392b; } .hdot.grey { background: #8e98a0; }
+  .why { font-size: 12px; color: var(--muted); line-height: 1.35; white-space: normal; max-width: 420px; }
+  .why b { color: var(--ink); font-weight: 600; }
+  .legend { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; padding: 12px 14px; }
+  .legend > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+  .legend h5 { margin: 0 0 4px; font-size: 13px; }
+  .rules { padding: 0 14px 12px; font-size: 12px; color: var(--muted); }
+  .rules table td, .rules table th { padding: 3px 8px; font-size: 12px; }
+  .spark { vertical-align: middle; }
+  @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(3, 1fr); } .row3 { grid-template-columns: 1fr; } }
+select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color:#067647}
+</style>
+</head>
+<body>
+<header>
+  <a href="/" style="color:#9fb3aa;text-decoration:none;font-size:12.5px">← Pilot Network</a>
+  <h1>Aspex Flight Logbook</h1>
+  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="inventory">Inventory</button></nav>
+  <span class="sub" id="sub"></span>
+  <button class="btn" id="importBtn" style="margin-left:auto">⤓ Import flights</button>
+  <label id="nfLabel" style="margin-left:14px"><input type="checkbox" id="showNf"> show motor starts with no take-off</label>
+</header>
+
+<main>
+ <section class="view" id="v-logbook">
+  <div class="tiles" id="tiles"></div>
+
+  <div class="row3">
+    <div class="panel"><h2>Aircraft</h2><div class="scroll"><table id="aircraft"></table></div></div>
+    <div class="panel"><h2>Batteries <span class="hint">capacity = full charge the battery reports, first seen → latest</span></h2>
+      <div class="scroll"><table id="batteries"></table></div></div>
+    <div class="panel"><h2>Flight hours by month</h2><div class="scroll bars" id="months"></div></div>
+  </div>
+
+  <div class="panel flights">
+    <div class="tools">
+      <input id="q" type="search" placeholder="Search date, flight no, battery, aircraft…">
+      <span class="count" id="count"></span>
+    </div>
+    <div class="scroll"><table id="flights"></table></div>
+  </div>
+ </section>
+
+ <section class="view" id="v-jobs" hidden>
+  <div class="split">
+   <div>
+    <div class="panel"><h2>Jobs <button class="btn sm" id="newJob">+ New job</button></h2><div id="jobList" class="list"></div></div>
+    <div class="panel" style="margin-top:12px"><h2>Clients <button class="btn sm ghost" id="newClient">+ Add</button></h2><div id="clientList" class="list"></div></div>
+   </div>
+   <div class="panel" id="jobEdit"><div class="empty">Pick a job on the left, or create one.</div></div>
+  </div>
+ </section>
+
+ <section class="view" id="v-sites" hidden>
+  <div class="split">
+   <div class="panel"><h2>Sites <button class="btn sm" id="newSite">+ New site</button></h2><div id="siteList" class="list"></div></div>
+   <div class="panel" id="siteEdit"><div class="empty">Pick a site on the left, or create one. Load the farm boundary from a Google Earth KML.</div></div>
+  </div>
+ </section>
+
+ <section class="view inv" id="v-inventory" hidden>
+  <nav class="subtabs"><button data-iv="batteries" class="on">Batteries</button><button data-iv="drones">Drones</button><button data-iv="payloads">Payloads</button></nav>
+  <div id="iv-batteries"></div>
+  <div id="iv-drones" hidden></div>
+  <div id="iv-payloads" hidden></div>
+ </section>
+</main>
+<div id="toast"></div>
+<div class="modal" id="impModal" hidden><div class="box" style="max-width:760px">
+  <h3 id="impTitle">Import flights</h3>
+  <div id="impDji"></div>
+  <p><b>From the drone PC:</b> plug in the controller (drone and controller on), then double-click <b>Import Flights</b> on the desktop.
+    It copies new records off the controller into Dropbox, sends them here, and opens this page. It closes itself when done.</p>
+  <p class="muted" style="margin-top:-6px"><a href="import-flights.cmd">Download Import Flights</a> (once per PC; save it to the desktop). It contains this logbook's upload key, so keep it to your own PCs.</p>
+  <p><b>Or drop flight record files here</b> (DJIFlightRecord_….txt), from any computer:</p>
+  <div class="drop" id="impDrop" style="border:2px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--muted);cursor:pointer">Drop files or click to choose<input type="file" id="impFiles" multiple accept=".txt" hidden></div>
+  <pre id="impLog" style="max-height:260px"></pre>
+  <details id="impMore"><summary>Settings and moving data across</summary>
+    <p><b>DJI developer key</b> (unlocks GPS tracks and battery data): <input id="impKey" style="width:280px" placeholder="paste the Open API app key"> <button class="btn sm" id="impKeySave">Save</button> <span class="muted" id="impKeyHint"></span></p>
+    <p><b>Move the old PC logbook here:</b> choose <i>Logbook export for website.json.gz</i> from Documents\FlightLogs. <input type="file" id="impMigrate" accept=".gz,.json"></p>
+    <p><button class="btn sm ghost" id="impNewKey">Make a new upload key</button> <span class="muted">Stops old copies of Import Flights from working; download it again afterwards.</span></p>
+  </details>
+  <div class="actions"><button class="btn ghost" id="impClose">Close</button></div>
+</div></div>
+
+<aside class="drawer" id="drawer">
+  <div class="top"><h3 id="dTitle"></h3><span class="muted" id="dSub"></span><button class="x" id="dClose" title="Close">×</button></div>
+  <div id="map"></div>
+  <div class="body" id="dBody"></div>
+</aside>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const num = (v, dp = 0) => v == null || v === '' ? '–' : Number(v).toLocaleString('en-AU', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const hrs = mins => num(mins / 60, 1);
+const air = f => f.durationMin ?? 0;   // DJI's recorded flight time - same figure everywhere
+const base = f => f.file.replace(/\.txt$/i, '');
+const MODEL = { Mavic3Enterprise: 'Mavic 3 Enterprise', Phantom4Pro: 'Phantom 4 Pro', Phantom4ProV2: 'Phantom 4 Pro V2', Mini2: 'Mini 2', Matrice30: 'Matrice 30', Matrice350RTK: 'Matrice 350 RTK' };
+const model = m => MODEL[m] || m || '–';
+const dateOnly = s => s ? new Date(s.replace(' ', 'T')).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
+const timeOnly = s => s ? s.slice(11, 16) : '';
+
+let all = [], inv = { aircraft: {}, batteries: {} }, sortKey = 'startLocal', sortDir = -1, map, layer;
+const BAT_STATUS = ['In service', 'Watch', 'Suspect', 'Retired'];
+const AC_STATUS = ['In service', 'Grounded', 'Retired'];
+const batCode = sn => inv.batteries[sn]?.code || '';
+const acCode = sn => inv.aircraft[sn]?.code || '';
+// battery shown as its code with the serial underneath, or just the serial if no code yet
+const batCell = sn => batCode(sn) ? `<span class="code">${esc(batCode(sn))}</span><span class="sn-sub">${esc(sn)}</span>` : `<span class="sn">${esc(sn)}</span>`;
+const acLabel = f => acCode(f.aircraftSn) || model(f.aircraftModel);
+
+async function load() {
+  const [a, b, c] = await Promise.all([fetch('api/logbook').then(r => r.json()), fetch('api/inventory').then(r => r.json()), fetch('api/ops').then(r => r.json())]);
+  all = a.flights || []; inv = b; inv.aircraft ||= {}; inv.batteries ||= {};
+  setOps(c);
+  render(); renderInventory(); renderJobs(); renderSites();
+}
+
+function render() {
+  const showNf = $('#showNf').checked;
+  const flights = all.filter(f => f.isFlight);
+  const last = flights.reduce((a, f) => (f.startLocal > (a?.startLocal || '') ? f : a), null);
+  $('#sub').textContent = last ? `Last flight ${dateOnly(last.startLocal)}` : '';
+
+  // ---- tiles ----
+  const days = new Set(flights.map(f => f.startLocal.slice(0, 10)));
+  const bats = new Set(flights.map(f => f.batterySn).filter(Boolean));
+  const tiles = [
+    ['Flights', num(flights.length)],
+    ['Flight hours', hrs(flights.reduce((s, f) => s + air(f), 0))],
+    ['Distance flown', num(flights.reduce((s, f) => s + (f.distanceKm || 0), 0), 0) + ' <small>km</small>'],
+    ['Photos taken', num(flights.reduce((s, f) => s + (f.photos || 0), 0))],
+    ['Flying days', num(days.size)],
+    ['Batteries in use', num(bats.size)],
+  ];
+  $('#tiles').innerHTML = tiles.map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  // ---- aircraft ----
+  const ac = group(flights, f => f.aircraftSn);
+  $('#aircraft').innerHTML = `<tr><th>Aircraft</th><th class="n">Flights</th><th class="n">Hours</th></tr>` +
+    ac.map(g => `<tr><td>${acCode(g.key) ? `<span class="code">${esc(acCode(g.key))}</span> · ` : ''}${esc(model(g.items[0].aircraftModel))}<div class="muted sn" style="font-size:11.5px">${esc(g.key)}</div>
+      <div class="muted" style="font-size:11.5px">last flown ${dateOnly(g.last)}</div></td>
+      <td class="n">${g.items.length}</td><td class="n">${hrs(g.mins)}</td></tr>`).join('');
+
+  // ---- batteries ----
+  const bg = group(flights, f => f.batterySn).sort((a, b) => b.last.localeCompare(a.last));
+  $('#batteries').innerHTML = `<tr><th>Battery</th><th class="n">Flights</th><th class="n">Hours</th><th>Last used</th>
+      <th class="n">Avg used</th><th class="n">Capacity mAh</th><th class="n">Min cell V</th><th class="n">Max °C</th></tr>` +
+    bg.map(g => {
+      const caps = g.items.filter(f => f.batteryFullMah).sort((a, b) => a.startLocal.localeCompare(b.startLocal));
+      const c0 = caps[0]?.batteryFullMah, c1 = caps[caps.length - 1]?.batteryFullMah;
+      const drop = c0 && c1 ? Math.round((c1 - c0) / c0 * 100) : null;
+      const used = g.items.filter(f => f.batteryStartPct != null && f.batteryEndPct != null);
+      const avgUsed = used.length ? used.reduce((s, f) => s + (f.batteryStartPct - f.batteryEndPct), 0) / used.length : null;
+      const minV = Math.min(...g.items.map(f => f.minCellV ?? 9)); const maxT = Math.max(...g.items.map(f => f.maxBatteryTempC ?? -99));
+      return `<tr class="click" data-bat="${esc(g.key)}"><td>${batCell(g.key)}</td><td class="n">${g.items.length}</td><td class="n">${hrs(g.mins)}</td>
+        <td>${dateOnly(g.last)}</td><td class="n">${avgUsed == null ? '–' : Math.round(avgUsed) + '%'}</td>
+        <td class="n">${c0 ? `${num(c0)} → ${num(c1)} ${drop != null && drop !== 0 ? `<span class="pill ${drop <= -10 ? 'warn' : ''}">${drop > 0 ? '+' : ''}${drop}%</span>` : ''}` : '–'}</td>
+        <td class="n">${minV < 9 ? num(minV, 2) : '–'}</td><td class="n">${maxT > -99 ? num(maxT, 0) : '–'}</td></tr>`;
+    }).join('');
+  document.querySelectorAll('#batteries tr[data-bat]').forEach(tr => tr.onclick = () => { $('#q').value = batCode(tr.dataset.bat) || tr.dataset.bat; renderFlights(); $('#flights').scrollIntoView({ behavior: 'smooth' }); });
+
+  // ---- months ----
+  const mg = group(flights, f => f.startLocal.slice(0, 7)).sort((a, b) => b.key.localeCompare(a.key));
+  const maxM = Math.max(1, ...mg.map(g => g.mins));
+  $('#months').innerHTML = mg.map(g => {
+    const d = new Date(g.key + '-01T00:00');
+    return `<div class="bar"><span>${d.toLocaleDateString('en-AU', { month: 'short', year: '2-digit' })}</span>
+      <div class="track"><div class="fill" style="width:${g.mins / maxM * 100}%"></div></div><span class="val">${hrs(g.mins)} h</span></div>`;
+  }).join('') || '<div class="empty">No flights yet</div>';
+
+  renderFlights();
+}
+
+function group(list, keyFn) {
+  const m = new Map();
+  for (const f of list) {
+    const k = keyFn(f) || '–';
+    if (!m.has(k)) m.set(k, { key: k, items: [], mins: 0, last: '' });
+    const g = m.get(k); g.items.push(f); g.mins += air(f); if (f.startLocal > g.last) g.last = f.startLocal;
+  }
+  return [...m.values()].sort((a, b) => b.items.length - a.items.length);
+}
+
+const COLS = [
+  ['flightNo', 'Flight'], ['startLocal', 'Date'], ['startLocal', 'Take-off', 't'], ['endLocal', 'Landing', 't'],
+  ['durationMin', 'Minutes', 'n'], ['aircraftModel', 'Aircraft'], ['batterySn', 'Battery'], ['batteryStartPct', 'Battery %', 'n'],
+  ['distanceKm', 'Distance km', 'n'], ['maxHeightM', 'Max height m', 'n'], ['photos', 'Photos', 'n'], ['_site', 'Site · Job'],
+];
+
+function renderFlights() {
+  const q = $('#q').value.trim().toLowerCase();
+  let rows = all.filter(f => $('#showNf').checked || f.isFlight);
+  if (q) rows = rows.filter(f => [siteJobText(f), f.flightNo, f.startLocal, dateOnly(f.startLocal), f.batterySn, batCode(f.batterySn), f.aircraftSn, acCode(f.aircraftSn), model(f.aircraftModel), f.file]
+    .join(' ').toLowerCase().includes(q));
+  rows.sort((a, b) => {
+    const x = sortKey === '_site' ? siteJobText(a) : a[sortKey] ?? '', y = sortKey === '_site' ? siteJobText(b) : b[sortKey] ?? '';
+    return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * sortDir;
+  });
+  $('#count').textContent = `${rows.length} shown · ${hrs(rows.filter(f => f.isFlight).reduce((s, f) => s + air(f), 0))} flight hours`;
+  $('#flights').innerHTML = `<tr>${COLS.map(([k, l, t], i) =>
+      `<th class="sortable ${t === 'n' ? 'n' : ''}" data-k="${k}">${l}${sortKey === k && i !== 2 && i !== 3 ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr>` +
+    (rows.map(f => `<tr class="click ${f.isFlight ? '' : 'nf'}" data-sha="${f.sha256}">
+      <td><b>${f.isFlight ? (esc(f.flightNo) || '<span class="muted">run import</span>') : '<span class="muted">no take-off</span>'}</b></td>
+      <td>${dateOnly(f.startLocal)}</td><td>${timeOnly(f.startLocal)}</td><td>${timeOnly(f.endLocal)}</td>
+      <td class="n">${num(air(f), 1)}</td><td>${esc(acLabel(f))}</td><td>${batCell(f.batterySn)}</td>
+      <td class="n">${f.batteryStartPct != null ? `${f.batteryStartPct} → ${f.batteryEndPct}` : '–'}</td>
+      <td class="n">${num(f.distanceKm, 2)}</td><td class="n">${num(f.maxHeightM, 0)}</td><td class="n">${num(f.photos)}</td><td>${siteJobCell(f)}</td>
+    </tr>`).join('') || `<tr><td colspan="${COLS.length}" class="empty">No flights match</td></tr>`);
+  document.querySelectorAll('#flights th[data-k]').forEach(th => th.onclick = () => {
+    if (sortKey === th.dataset.k) sortDir = -sortDir; else { sortKey = th.dataset.k; sortDir = th.classList.contains('n') ? -1 : 1; }
+    renderFlights();
+  });
+  document.querySelectorAll('#flights tr[data-sha]').forEach(tr => tr.onclick = () => openFlight(all.find(f => f.sha256 === tr.dataset.sha), tr));
+}
+
+async function openFlight(f, tr) {
+  document.querySelectorAll('#flights tr.sel').forEach(x => x.classList.remove('sel')); tr?.classList.add('sel');
+  $('#dTitle').textContent = !f.isFlight ? 'Power-up (no take-off)' : f.flightNo ? `Flight ${f.flightNo}` : 'Flight';
+  $('#dSub').textContent = `${dateOnly(f.startLocal)}, ${timeOnly(f.startLocal)}–${timeOnly(f.endLocal)}`;
+  const b = base(f);
+  const cell = (k, v) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  $('#dBody').innerHTML = `
+    <div class="actions">
+      ${f.track === 'ok' ? `<a class="btn" href="kml/${encodeURIComponent(b)}.kml" title="Downloads the track - open the file to see it in Google Earth">Open in Google Earth (KML)</a>` : `<span class="pill warn">No GPS track: ${esc(f.track)}</span>`}
+    </div>
+    <div class="section">Site & job</div>
+    <div id="dAssign"></div>
+    <div class="section">Flight</div>
+    <div class="grid">
+      ${cell('Take-off', esc(f.startLocal))}${cell('Landing', esc(f.endLocal))}${cell('Flight time', num(air(f), 1) + ' min')}
+      ${cell('Distance flown', num(f.distanceKm, 2) + ' km')}${cell('Max height', num(f.maxHeightM, 1) + ' m')}${cell('Max range from take-off', num(f.maxRangeM) + ' m')}
+      ${cell('Max speed', num(f.maxHSpeedMs, 1) + ' m/s')}${cell('Photos', num(f.photos))}${cell('Video', num(f.videoSec) + ' s')}
+      ${cell('Take-off position', `${num(f.takeoffLat, 5)}, ${num(f.takeoffLon, 5)}`)}${cell('Track points', num(f.trackPoints))}${cell('App', esc(f.app))}
+    </div>
+    <div class="section">Aircraft & battery</div>
+    <div class="grid">
+      ${cell('Aircraft', esc(acLabel(f)) + (acCode(f.aircraftSn) ? `<span class="sn-sub">${esc(model(f.aircraftModel))}</span>` : ''))}${cell('Aircraft serial', `<span class="sn">${esc(f.aircraftSn)}</span>`)}${cell('Controller serial', `<span class="sn">${esc(f.rcSn)}</span>`)}
+      ${cell('Battery', batCell(f.batterySn))}${cell('Charge', f.batteryStartPct != null ? `${f.batteryStartPct}% → ${f.batteryEndPct}%` : '–')}${cell('Energy used', f.batteryUsedMah != null ? num(f.batteryUsedMah) + ' mAh' : '–')}
+      ${cell('Battery capacity', f.batteryFullMah ? num(f.batteryFullMah) + ' mAh' : '–')}${cell('Lowest cell', f.minCellV != null ? num(f.minCellV, 2) + ' V' : '–')}${cell('Max battery temp', f.maxBatteryTempC != null ? num(f.maxBatteryTempC, 1) + ' °C' : '–')}
+    </div>
+    <div class="section">Source</div>
+    <div class="muted sn" style="font-size:12px">${esc(f.file)}</div>`;
+  renderAssign(f);
+  $('#drawer').classList.add('open');
+
+  if (!map) {
+    map = L.map('map');
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri' }).addTo(map);
+  }
+  setTimeout(() => map.invalidateSize(), 220);
+  if (layer) { layer.remove(); layer = null; }
+  if (f.track !== 'ok') { map.setView([f.takeoffLat || -33, f.takeoffLon || 147], f.takeoffLat ? 15 : 5); return; }
+  const trk = await fetch(`api/track/${encodeURIComponent(b)}`);
+  if (!trk.ok) { map.setView([f.takeoffLat, f.takeoffLon], 15); return; }
+  const gj = await trk.json();
+  const c = gj.features[0].geometry.coordinates;
+  layer = L.layerGroup([
+    L.polyline(c.map(p => [p[1], p[0]]), { color: '#ffb000', weight: 3 }),
+    L.circleMarker([c[0][1], c[0][0]], { radius: 7, color: '#fff', weight: 2, fillColor: '#0f6e5a', fillOpacity: 1 }).bindTooltip('Take-off'),
+  ]).addTo(map);
+  setTimeout(() => map.fitBounds(layer.getLayers()[0].getBounds(), { padding: [25, 25] }), 230);
+}
+
+let toastT;
+function toast(msg, ms = 1600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms); }
+
+async function saveField(el) {
+  const tr = el.closest('tr'), kind = tr.dataset.kind, sn = tr.dataset.sn, f = el.dataset.f;
+  const value = el.value.trim();
+  if (f === 'code' && value && kind === 'batteries') {
+    const clash = Object.entries(inv.batteries).find(([s, b]) => s !== sn && (b.code || '').toLowerCase() === value.toLowerCase());
+    if (clash) { toast(`${value} is already used by ${clash[0]}`); el.value = inv.batteries[sn].code || ''; return; }
+  }
+  try {
+    const r = await fetch('api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [kind]: { [sn]: { [f]: value } } }) });
+    if (!r.ok) throw new Error(r.status);
+    inv = await r.json(); toast('Saved');
+    if (f === 'status') renderInventory(); else render();
+  } catch { toast('Could not save - is the logbook window still open?'); }
+}
+
+function showView(v) {
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  for (const n of ['logbook', 'jobs', 'sites', 'inventory']) $('#v-' + n).hidden = v !== n;
+  $('#nfLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
+  if (v === 'inventory') renderInventory(); if (v === 'jobs') renderJobs(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  if (v !== 'logbook') $('#dClose').click();
+}
+document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showView(b.dataset.v));
+
+$('#dClose').onclick = () => { $('#drawer').classList.remove('open'); document.querySelectorAll('#flights tr.sel').forEach(x => x.classList.remove('sel')); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#dClose').click(); });
+$('#q').oninput = renderFlights;
+$('#showNf').onchange = render;
+</script>
+<script src="inv.js"></script>
+<script src="ops.js"></script>
+</body>
+</html>

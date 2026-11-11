@@ -130,6 +130,29 @@ The app recognises the form's existing field labels ("Full name", "Home base (to
   3. Watch the replies come in, then **Assign** a pilot.
 - **Finding the right pilots.** Filter the Pilots list by state, Part, stage, credential, drone or travel range. Then tick pilots, or use "Message everyone in this list".
 
+## 5. Flight logbook (/logbook/)
+
+The flight logbook (replacing Drone Logbook) is a self-contained section of this app. Its code is all in `src/logbook/`, so it can later be lifted out as its own product.
+
+- **What it holds:** flights, GPS tracks, drones, batteries (health ratings and genuine/non-genuine), payloads, clients, sites with Google Earth boundaries, jobs, and a preliminary airspace check (OpenAIP data).
+- **Where it's stored:** the same MySQL database as the pilot records: collections `lbFlights`, `lbKeys`, `lbOps` and `lbState`. GPS tracks are stored as files in `app_files`. The Backup page includes everything except the tracks; those can be rebuilt by sending the original files again.
+- **Original DJI files:** these aren't stored on the website. The drone PC keeps them in Dropbox (`Aspex Drone Services\Flight Records`).
+
+**Getting flights in**
+
+1. In the logbook, click **Import flights → Download Import Flights** and save it to the drone PC's desktop. It has this site's address and upload key built in.
+2. Plug in the controller with the drone and controller both on, then double-click **Import Flights**. It:
+   - copies new records off the controller into Dropbox
+   - asks the site which files it hasn't got, and sends only those
+   - opens the logbook, then closes itself.
+3. You can also drag `.txt` flight records into the Import window from any computer.
+
+**Settings** (Import window → *Settings and moving data across*)
+
+- **DJI developer key:** the Open API app key from developer.dji.com. It's needed to decrypt GPS tracks and battery data. It's stored in the database, not in the hosting secrets.
+- **Make a new upload key:** stops old copies of Import Flights from working.
+- **Move the old PC logbook here:** upload `Logbook export for website.json.gz`. This is a one-off and safe to repeat; flights already here are skipped.
+
 ## Coming next (stage 2)
 
 - **Pilot logins:** each pilot updates their own details and uploads their own certificates. Anything they change shows as "not verified" until you check it.

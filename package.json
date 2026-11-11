@@ -13,6 +13,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "dji-log-parser-js": "^0.5.7",
     "express": "^5.3.0",
     "leaflet": "^1.9.4",
     "multer": "^2.5.0",

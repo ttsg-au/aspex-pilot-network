@@ -15,6 +15,8 @@ const config = require('./config');
 const COLLECTIONS = [
   'pilots', 'qualifications', 'records', 'flightLogs',
   'messages', 'jobs', 'jobResponses', 'registrations', 'settings',
+  // flight logbook (src/logbook)
+  'lbFlights', 'lbKeys', 'lbOps', 'lbState',
 ];
 
 const data = {};

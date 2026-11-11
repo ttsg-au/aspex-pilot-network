@@ -14,7 +14,7 @@ function fmtDateTime(d) {
 }
 
 const NAV = [
-  ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/import', 'Add / import'], ['/backup', 'Backup'],
+  ['/', 'Dashboard'], ['/pilots', 'Pilots'], ['/messages', 'Messages'], ['/jobs', 'Jobs'], ['/logbook/', 'Flight logbook'], ['/import', 'Add / import'], ['/backup', 'Backup'],
 ];
 
 // Changes on every restart/deploy so browsers fetch the new style sheet and script.

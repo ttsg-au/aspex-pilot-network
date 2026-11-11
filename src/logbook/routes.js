@@ -1,0 +1,173 @@
+// Flight logbook routes, all under /logbook.
+//   router     - needs you logged in (the logbook pages and their data)
+//   pcRouter   - for the "Import Flights" program on the drone PC; checked with the upload key instead
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');
+const config = require('../config');
+const db = require('../db');
+const store = require('./store');
+const dji = require('./dji');
+const sites = require('./sites');
+const { importCmd } = require('./pcscript');
+
+const router = express.Router();
+const pcRouter = express.Router();
+const PUB = path.join(__dirname, 'public');
+const raw = (limit) => [express.raw({ type: () => true, limit }),
+  (req, res, next) => Buffer.isBuffer(req.body) ? next() : fail(res, 'Send the file as raw data (Content-Type: application/octet-stream).')];
+const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e?.message || e));
+
+// ---------- pages ----------
+// The page uses relative links, so it must be served at /logbook/ (with the slash).
+router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
+  ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html')))
+  : res.redirect('/logbook/'));
+router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+
+// ---------- data ----------
+router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights().slice()
+  .sort((a, b) => (a.startUtc || '').localeCompare(b.startUtc || '')).map(store.publicFlight) }));
+router.get('/logbook/api/inventory', (req, res) => res.json(store.inventory()));
+router.post('/logbook/api/inventory', (req, res) => res.json(store.saveInventory(req.body || {})));
+router.get('/logbook/api/ops', (req, res) => res.json(store.ops()));
+router.post('/logbook/api/ops', express.json({ limit: '2mb' }), (req, res) => res.json(store.saveOps(req.body || {})));
+router.post('/logbook/api/flights/:sha', (req, res) => {          // pilot / notes on one flight
+  const f = store.flightBySha(req.params.sha);
+  if (!f) return fail(res, 'no such flight', 404);
+  const b = req.body || {}, ch = {};
+  for (const k of ['pilot', 'notes']) if (k in b) ch[k] = store.clean(b[k], k === 'notes' ? 2000 : 120);
+  res.json(store.publicFlight(db.update('lbFlights', f.id, ch)));
+});
+router.post('/logbook/api/sites/:id/kml', raw('20mb'), (req, res) => {
+  try { res.json(sites.setBoundary(store.safeKey(req.params.id), req.body, req.query.name || '')); } catch (e) { fail(res, e); }
+});
+router.post('/logbook/api/sites/:id/airspace', async (req, res) => {
+  try { res.json(await sites.checkAirspace(store.safeKey(req.params.id), req.query.refresh === '1')); } catch (e) { fail(res, e); }
+});
+
+async function track(req) {
+  const f = store.flightByFile(req.params.file + '.txt') || store.flightByFile(req.params.file);
+  if (!f?.trackFile) return null;
+  const file = await db.readFile(f.trackFile);
+  return file && { f, gj: JSON.parse(file.content.toString('utf8')) };
+}
+router.get('/logbook/api/track/:file', async (req, res) => {
+  const t = await track(req);
+  t ? res.type('application/geo+json').send(t.gj) : fail(res, 'no track', 404);
+});
+router.get('/logbook/kml/:file.kml', async (req, res) => {
+  const t = await track(req);
+  if (!t) return fail(res, 'no track', 404);
+  res.type('application/vnd.google-earth.kml+xml').attachment(req.params.file + '.kml').send(dji.kml(t.f, t.gj));
+});
+router.get('/logbook/logbook.csv', (req, res) => {
+  const rows = store.flights().slice().sort((a, b) => (a.startUtc || '').localeCompare(b.startUtc || ''));
+  res.type('text/csv').attachment(`Aspex flight logbook ${db.today()}.csv`).send(dji.csv(rows));
+});
+
+// ---------- import: status, manual upload in the browser, settings ----------
+router.get('/logbook/api/import/status', (req, res) => {
+  const s = store.settings();
+  res.json({ dji: !!(s.djiApiKey || '').trim(), uploads: store.uploads().slice(0, 60) });
+});
+router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-and-drop .txt files in the browser
+  try {
+    const name = path.basename(String(req.query.name || ''));
+    if (!/^(DJI)?FlightRecord_.*\.txt$/i.test(name)) return fail(res, 'That isn’t a DJI flight record (DJIFlightRecord_….txt)');
+    const r = await dji.processFile(req.body, name);
+    const line = { file: name, status: r.status, track: r.flight.track, via: 'browser' };
+    if (r.status !== 'already had') store.noteUpload(line);
+    res.json({ ...line, summary: summary(r) });
+  } catch (e) { fail(res, e, 500); }
+});
+router.get('/logbook/api/settings', (req, res) => {
+  const s = store.settings();
+  res.json({ dji: !!(s.djiApiKey || '').trim(), djiHint: s.djiApiKey ? '…' + s.djiApiKey.slice(-4) : '' });
+});
+router.post('/logbook/api/settings', (req, res) => {
+  const b = req.body || {}, ch = {};
+  if (typeof b.djiApiKey === 'string') ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);
+  if (b.newUploadKey) ch.uploadKey = require('crypto').randomBytes(18).toString('base64url');
+  store.saveSettings(ch);
+  res.json({ ok: true });
+});
+router.get('/logbook/import-flights.cmd', (req, res) => {
+  res.type('application/octet-stream').attachment('Import Flights.cmd').send(importCmd(`${req.protocol}://${req.get('host')}`, store.settings().uploadKey));   // the address you downloaded it from
+});
+
+// One-off move from the old PC logbook ("Logbook export for website.json.gz").
+router.post('/logbook/api/migrate', raw('100mb'), async (req, res) => {
+  try {
+    let buf = req.body;
+    if (buf[0] === 0x1f && buf[1] === 0x8b) buf = zlib.gunzipSync(buf);
+    const b = JSON.parse(buf.toString('utf8'));
+    const out = { flights: 0, tracks: 0, keys: 0, skipped: 0 };
+    const keyByFile = {};
+    for (const [name, k] of Object.entries(b.keys || {})) keyByFile[name.replace(/\.keychains\.json$/, '')] = k;
+    for (const f of b.logbook?.flights || []) {
+      if (!f.sha256) continue;
+      if (store.flightBySha(f.sha256)) { out.skipped++; continue; }
+      const base = (f.file || '').replace(/\.txt$/i, '');
+      const { job, ...entry } = f;
+      if (b.ops?.flightJob?.[f.sha256]) entry.jobId = b.ops.flightJob[f.sha256];
+      const gj = b.tracks?.[base];
+      if (gj && f.track === 'ok') { entry.trackFile = await db.saveFile(Buffer.from(JSON.stringify(gj)), base + '.geojson', 'application/geo+json'); out.tracks++; }
+      store.putFlight(entry); out.flights++;
+      if (keyByFile[base]) { store.putKeys(f.sha256, keyByFile[base]); out.keys++; }
+    }
+    store.renumber();
+    if (b.inventory) store.saveInventory(b.inventory);
+    for (const kind of ['clients', 'sites', 'jobs']) {
+      for (const [key, item] of Object.entries(b.ops?.[kind] || {})) if (store.safeKey(key) && item) store.putOps(kind, key, item);
+    }
+    for (const f of b.logbook?.flights || []) {                    // job links for flights that were already here
+      const jobId = b.ops?.flightJob?.[f.sha256], cur = jobId && store.flightBySha(f.sha256);
+      if (cur && !cur.jobId) db.update('lbFlights', cur.id, { jobId });
+    }
+    await db.flush();
+    store.noteUpload({ file: 'old PC logbook', status: `moved ${out.flights} flights, ${out.tracks} tracks`, via: 'migration' });
+    res.json(out);
+  } catch (e) { fail(res, e, 500); }
+});
+
+function summary(r) {
+  const f = r.flight;
+  if (r.status === 'already had') return 'already in the logbook';
+  if (!f.isFlight) return f.track === 'error' ? 'could not read: ' + (f.error || '') : 'motor start, no take-off';
+  const t = { ok: 'track ok', 'no key': 'no GPS track yet - add the DJI key in Settings', 'key error': 'DJI refused the key request' }[f.track] || f.track;
+  return `${f.flightNo || ''} ${f.durationMin} min, ${t}`.trim();
+}
+
+// ---------- the drone PC's Import Flights program ----------
+pcRouter.use('/logbook/api/pc', (req, res, next) => {
+  const k = req.get('x-logbook-key') || '';
+  const want = store.settings().uploadKey;
+  if (!want || k.length !== want.length || !require('crypto').timingSafeEqual(Buffer.from(k), Buffer.from(want))) return fail(res, 'Upload key not accepted. Download Import Flights again from the logbook’s Import window.', 401);
+  next();
+});
+pcRouter.post('/logbook/api/pc/need', express.json({ limit: '5mb' }), (req, res) => {
+  const byFile = new Map(store.flights().map(f => [f.file, f]));
+  const need = (req.body?.files || []).filter(x => {
+    const f = byFile.get(x.name);
+    return !f || !dji.isDone(f) || (f.bytes && x.bytes && f.bytes !== x.bytes);
+  }).map(x => x.name);
+  res.json({ need });
+});
+pcRouter.post('/logbook/api/pc/upload', raw('60mb'), async (req, res) => {
+  try {
+    const name = path.basename(String(req.query.name || ''));
+    if (!/^(DJI)?FlightRecord_.*\.txt$/i.test(name)) return fail(res, 'not a DJI flight record');
+    const r = await dji.processFile(req.body, name);
+    if (r.status !== 'already had') store.noteUpload({ file: name, status: r.status, track: r.flight.track, via: 'drone PC' });
+    res.json({ status: r.status, summary: summary(r) });
+  } catch (e) { fail(res, e, 500); }
+});
+pcRouter.post('/logbook/api/pc/done', express.json(), (req, res) => {
+  const b = req.body || {};
+  store.noteUpload({ file: 'Import Flights run', status: `${Number(b.copied) || 0} copied from controller, ${Number(b.sent) || 0} sent${b.failed ? `, ${Number(b.failed)} failed` : ''}`, via: 'drone PC', summaryLine: true });
+  res.json({ ok: true });
+});
+
+module.exports = { router, pcRouter };

@@ -34,6 +34,9 @@ app.get('/health', (req, res) => res.status(dbError ? 503 : 200).type('text').se
 // Public: login, website form webhook, pilots' job replies.
 app.use(main.publicRouter);
 app.use(comms.publicRouter);
+// The drone PC's Import Flights program (checked with its own upload key).
+const logbook = require('./src/logbook/routes');
+app.use(logbook.pcRouter);
 
 // Everything else needs you logged in.
 app.use(auth.requireAdmin);
@@ -42,6 +45,7 @@ app.use(pilots.router);
 app.use(comms.router);
 app.use(require('./src/routes/screening').router);
 app.use(require('./src/routes/wordpress').router);
+app.use(logbook.router);
 
 app.use((req, res) => res.status(404).send('Not found'));
 app.use((err, req, res, next) => {
