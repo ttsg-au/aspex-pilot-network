@@ -47,10 +47,10 @@ function parseKml(text) {
   const name = (text.match(/<name>([^<]{1,120})<\/name>/) || [])[1] || '';
   return { polys, name: name.trim() };
 }
-function setBoundary(key, buf, filename) {
+function setBoundary(uid, key, buf, filename) {
   const text = buf[0] === 0x50 && buf[1] === 0x4b ? unzipFirstKml(buf) : buf.toString('utf8');
   const { polys, name } = parseKml(text);
-  return store.updateSite(key, (s) => {
+  return store.updateSite(uid, key, (s) => {
     s.boundary = polys; s.areaHa = Math.round(Geo.areaHa(polys) * 10) / 10;
     s.centroid = Geo.centroid(polys).map(v => Math.round(v * 1e6) / 1e6);
     s.boundaryFile = store.clean(filename, 200); s.boundaryLoaded = new Date().toISOString();
@@ -90,8 +90,8 @@ function fbox(geom) {
   if (geom?.coordinates) walk(geom.coordinates);
   return [x0, y0, x1, y1];
 }
-async function checkAirspace(key, refresh = false) {
-  const s = store.ops().sites[key];
+async function checkAirspace(uid, key, refresh = false) {
+  const s = store.ops(uid).sites[key];
   if (!s) throw new Error('no such site');
   if (!s.boundary) throw new Error('Load the site boundary KML first');
   const [x0, y0, x1, y1] = Geo.bbox(s.boundary), pad = 0.15;        // ~15 km around the farm
@@ -109,7 +109,7 @@ async function checkAirspace(key, refresh = false) {
       return { name: P.name || '', icao: P.icaoCode || P.icao_code || '', type: Number(P.type), coords: f.geometry.coordinates };
     }),
   };
-  return store.updateSite(key, (site) => { site.airspace = airspace; });
+  return store.updateSite(uid, key, (site) => { site.airspace = airspace; });
 }
 
 module.exports = { setBoundary, checkAirspace };

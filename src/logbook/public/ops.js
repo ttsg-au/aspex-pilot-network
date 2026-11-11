@@ -364,4 +364,12 @@ $('#impMigrate').onchange = async e => {
 };
 
 // start
-(async () => { try { cfgStatus = { dji: (await (await fetch('api/import/status')).json()).dji }; } catch {} ; load(); })();
+(async () => {
+  try {
+    const me = await (await fetch('api/settings')).json();
+    cfgStatus = { dji: me.dji };
+    $('#who').innerHTML = `${esc(me.name || me.email)} · <a href="logout" style="color:#9fb3aa">Log out</a>`;
+    $('#backLink').hidden = me.role !== 'owner';
+  } catch {}
+  load();
+})();

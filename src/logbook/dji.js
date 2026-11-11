@@ -21,12 +21,14 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
 const isDone = (f) => f && FINAL.has(f.track);
 
-async function processFile(buf, file) {
+async function processFile(user, buf, file) {
+  const uid = user.id;
   const DJILog = await loadParser();
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
-  const existing = store.flightBySha(sha256);
+  const existing = store.flightBySha(uid, sha256);
   if (isDone(existing)) return { file, sha256, status: 'already had', flight: existing };
-  const apiKey = (store.settings().djiApiKey || '').trim();
+  // Network pilots without their own DJI developer key use Aspex's (the owner account's).
+  const apiKey = (user.djiApiKey || db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
 
   let entry;
   try {
@@ -81,8 +83,8 @@ async function processFile(buf, file) {
   } catch (e) {
     entry = { file, sha256, bytes: buf.length, track: 'error', error: String(e?.message || e), isFlight: false };
   }
-  const flight = store.putFlight(entry);
-  store.renumber();
+  const flight = store.putFlight(uid, entry);
+  store.renumber(uid);
   return { file, sha256, status: existing ? 'updated' : 'added', flight };
 }
 

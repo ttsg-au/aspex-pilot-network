@@ -132,7 +132,14 @@ The app recognises the form's existing field labels ("Full name", "Home base (to
 
 ## 5. Flight logbook (/logbook/)
 
-The flight logbook (replacing Drone Logbook) is a self-contained section of this app. Its code is all in `src/logbook/`, so it can later be lifted out as its own product.
+The flight logbook (replacing Drone Logbook) is a self-contained section of this app.
+
+**Each person has their own logbook and logs in with their own email and password** (at `/logbook/login`). This login is separate from the admin login.
+
+- **Your account:** go to **Flight logbook** in the admin menu and create your account. The logbook data that's already there moves into it.
+- **Network pilots:** click **Give logbook access** on a pilot's page. This emails them a link to set their password (valid for 7 days). If the email doesn't arrive, copy the link shown on the accounts page and send it yourself.
+- **What pilots see:** only their own flights, drones, batteries, sites and jobs. They can't see the admin pages.
+- **DJI key:** pilots without their own DJI developer key use the one on your account. Its code is all in `src/logbook/`, so it can later be lifted out as its own product.
 
 - **What it holds:** flights, GPS tracks, drones, batteries (health ratings and genuine/non-genuine), payloads, clients, sites with Google Earth boundaries, jobs, and a preliminary airspace check (OpenAIP data).
 - **Where it's stored:** the same MySQL database as the pilot records: collections `lbFlights`, `lbKeys`, `lbOps` and `lbState`. GPS tracks are stored as files in `app_files`. The Backup page includes everything except the tracks; those can be rebuilt by sending the original files again.

@@ -181,7 +181,7 @@ ${q.expiresOn ? `<button formaction="/quals/${q.id}/remind" class="ghost">Email 
 <div>${agreementBadge(ag)}${ag && ag.version ? ' <span class="sub">' + esc(ag.version) + '</span>' : ''}</div>
 <div class="sub">${esc(p.business)}${p.abn && !(p.business || '').replace(/\s/g, '').includes(p.abn.replace(/\s/g, '')) ? ' · ABN ' + esc(p.abn) : ''}</div></div>
 <div class="actions"><a class="btn" href="/messages/new?ids=${p.id}">Email ${esc(M.firstName(p))}</a>
-<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> ${require('./wordpress').loginPanel(p)} <a class="btn ghost" href="#delete">Delete…</a></div></div>
+<a class="btn ghost" href="/jobs/pick?ids=${p.id}">Send a job</a> ${require('./wordpress').loginPanel(p)} ${require('../logbook/accounts').pilotButton(p)} <a class="btn ghost" href="#delete">Delete…</a></div></div>
 
 ${ag ? '' : `<div class="flash bad"><b>No signed contractor agreement.</b> ${esc(M.firstName(p))} can't be given work until it's signed. When it is, add it under Credentials → “Contractor agreement (signed)” with the date signed.</div>`}
 <section class="card"><h2>Pathway stage</h2>
