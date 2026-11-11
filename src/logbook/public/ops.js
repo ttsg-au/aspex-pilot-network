@@ -128,8 +128,10 @@ function renderJobEdit() {
         return ss.map(s => `<tr><td>${dateOnly(s.day)}</td><td>${sessLabel(s)}</td><td class="n">${s.flights.length} flights</td><td class="n">${hrs(s.mins)} h</td>
           <td class="n"><button class="btn sm" data-add="${esc(s.key)}">Add to job</button></td></tr>`).join('') || '<tr><td class="muted">Nothing unassigned.</td></tr>';
       })()}</table>
-    </div>`;
+    </div>
+    <div class="sub2" id="jobNet"></div>`;
   bindFields($('#jobEdit'), 'jobs', curJob);
+  renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {
     if (!confirm(`Delete the job "${j.name || 'Untitled'}"? Its flights stay in the logbook, just unassigned.`)) return;
@@ -371,6 +373,9 @@ $('#impMigrate').onchange = async e => {
     cfgStatus = { dji: me.dji };
     $('#who').innerHTML = `${esc(me.name || me.email)} · <a href="logout" style="color:#9fb3aa">Log out</a>`;
     $('#backLink').hidden = me.role !== 'owner';
+    myRole = me.role;
+    await loadAspexJobs();
+    if (me.role !== 'owner') for (const id of ['jobs', 'sites']) { const b = document.querySelector(`nav.tabs button[data-v=${id}]`); if (b) b.textContent = id === 'jobs' ? 'My jobs' : 'My sites'; }
   } catch {}
   load();
 })();

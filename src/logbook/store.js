@@ -101,7 +101,8 @@ const OPS_FIELDS = {
   clients: { name: 120, contact: 200, notes: 2000 },
   sites: { name: 120, owner: 120, om: 120, marginM: 10, notes: 2000 },
   jobs: { name: 160, clientId: 48, siteId: 48, status: 30, ref: 80, purpose: 200, operator: 160, opType: 10,
-    dropboxUrl: 600, sitemarkUrl: 600, start: 10, end: 10, notes: 4000 },
+    dropboxUrl: 600, sitemarkUrl: 600, start: 10, end: 10, notes: 4000,
+    networkJobId: 40, swmsUrl: 600, capture: 3000 },   // shared with network pilots (network.js)
   // drone maintenance log: inspections (with ticked checklist), parts replaced, firmware updates, repairs
   maint: { sn: 30, date: 10, type: 40, checks: 3000, parts: 1000, firmware: 300, by: 120, notes: 4000, hoursAt: 12 },
 };
@@ -184,5 +185,5 @@ async function claimUnowned(uid) {
 module.exports = {
   clean, flights, flightBySha, flightByFile, putFlight, renumber, publicFlight,
   getKeys, putKeys, inventory, saveInventory, ops, saveOps, putOps, updateSite, safeKey,
-  noteUpload, uploads, claimUnowned,
+  noteUpload, uploads, claimUnowned, state, setState,
 };

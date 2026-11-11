@@ -139,7 +139,17 @@ The flight logbook (replacing Drone Logbook) is a self-contained section of this
 - **Your account:** go to **Flight logbook** in the admin menu and create your account. The logbook data that's already there moves into it.
 - **Network pilots:** click **Give logbook access** on a pilot's page. This emails them a link to set their password (valid for 7 days). If the email doesn't arrive, copy the link shown on the accounts page and send it yourself.
 - **What pilots see:** only their own flights, drones, batteries, sites and jobs. They can't see the admin pages.
-- **DJI key:** pilots without their own DJI developer key use the one on your account. Its code is all in `src/logbook/`, so it can later be lifted out as its own product.
+- **DJI key:** pilots without their own DJI developer key use the one on your account.
+
+**Aspex jobs shared with network pilots**
+
+1. In your logbook, open a job and fill in **Network pilots**:
+   - pick the pilot network job
+   - paste the site SWMS link
+   - add the capture settings
+2. Pilots assigned to that network job, who also have a logbook account, see it under **Aspex jobs** in their own logbook.
+3. Before the job opens for them, they must accept the operating basis. Today that's always **Independent operator**: they fly under their own accreditation and their own checklists, and the work isn't carried out under an Aspex ReOC. They also accept the site SWMS and that their flights on the job are shared with Aspex. The date and the exact wording they accepted are recorded.
+4. Their flights that take off on the job's site, during the job dates (one day either side), show on your job with routes on a map. So do their daily "own pre-flight checks done" ticks and whether they've marked flying complete. Nothing else in their logbook is visible to you. Its code is all in `src/logbook/`, so it can later be lifted out as its own product.
 
 - **What it holds:** flights, GPS tracks, drones, batteries (health ratings and genuine/non-genuine), payloads, clients, sites with Google Earth boundaries, jobs, and a preliminary airspace check (OpenAIP data).
 - **Where it's stored:** the same MySQL database as the pilot records: collections `lbFlights`, `lbKeys`, `lbOps` and `lbState`. GPS tracks are stored as files in `app_files`. The Backup page includes everything except the tracks; those can be rebuilt by sending the original files again.

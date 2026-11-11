@@ -60,6 +60,10 @@
   table.sum th, table.sum td { border: 1px solid var(--line); padding: 4px 7px; text-align: left; vertical-align: top; white-space: normal; }
   table.sum td.n, table.sum th.n { text-align: right; }
   .ptitle { display: none; }
+  .basis { background: #fff7e6; border: 1px solid #f0d9a8; border-radius: 8px; padding: 10px 12px; font-size: 13.5px; line-height: 1.45; }
+  .acks { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; font-size: 13.5px; }
+  .acks label, .days label { display: flex; gap: 8px; align-items: flex-start; }
+  .days { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0; font-size: 13px; }
   @media print {
     header, nav.tabs, .noprint, .drawer, #toast, .modal { display: none !important; }
     body { background: #fff; } main { padding: 0; } .panel { border: 0; box-shadow: none; }
@@ -163,7 +167,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
 <header>
   <a href="/logbook-accounts" id="backLink" hidden style="color:#9fb3aa;text-decoration:none;font-size:12.5px">← Pilot Network</a>
   <h1>Flight Logbook</h1>
-  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="inventory">Inventory</button><button data-v="reports">CASA logs</button><button data-v="me">Me</button></nav>
+  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="aspex" hidden>Aspex jobs</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="inventory">Inventory</button><button data-v="reports">CASA logs</button><button data-v="me">Me</button></nav>
   <span class="sub" id="sub"></span>
   <span id="who" style="color:#9fb3aa;font-size:12.5px;margin:0 10px 0 auto"></span><button class="btn" id="importBtn">⤓ Import flights</button>
   <label id="nfLabel" style="margin-left:14px"><input type="checkbox" id="showNf"> show motor starts with no take-off</label>
@@ -206,6 +210,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   </div>
  </section>
 
+ <section class="view" id="v-aspex" hidden></section>
  <section class="view" id="v-reports" hidden></section>
  <section class="view" id="v-me" hidden></section>
  <section class="view inv" id="v-inventory" hidden>
@@ -437,9 +442,9 @@ async function saveField(el) {
 
 function showView(v) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  for (const n of ['logbook', 'jobs', 'sites', 'inventory', 'reports', 'me']) $('#v-' + n).hidden = v !== n;
+  for (const n of ['logbook', 'aspex', 'jobs', 'sites', 'inventory', 'reports', 'me']) $('#v-' + n).hidden = v !== n;
   $('#nfLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
-  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'me') renderMe(); if (v === 'jobs') renderJobs(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'aspex') renderAspex(); if (v === 'me') renderMe(); if (v === 'jobs') renderJobs(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
   if (v !== 'logbook') $('#dClose').click();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showView(b.dataset.v));
@@ -452,5 +457,6 @@ $('#showNf').onchange = render;
 <script src="inv.js"></script>
 <script src="ops.js"></script>
 <script src="casa.js"></script>
+<script src="aspex.js"></script>
 </body>
 </html>
