@@ -65,6 +65,8 @@ async function processFile(user, buf, file) {
         catch (e) { entry.track = 'track unreadable'; entry.trackError = String(e?.message || e); }
         if (frames) {
           Object.assign(entry, flightStats(frames, entry));
+          const cyc = batteryCycles(log, keychains);
+          if (cyc != null) entry.batteryCycles = cyc;
           const pts = trackPoints(frames, entry);
           if (pts.length >= 2) {
             const geo = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature',
@@ -86,6 +88,21 @@ async function processFile(user, buf, file) {
   const flight = store.putFlight(uid, entry);
   store.renumber(uid);
   return { file, sha256, status: existing ? 'updated' : 'added', flight };
+}
+
+// The battery's charge-cycle count, as the battery itself reports it.
+function batteryCycles(log, keychains) {
+  try {
+    for (const r of log.records(keychains)) {
+      if (r.type === 'SmartBatteryGroup' && r.content.type === 'SmartBatteryStatic' && r.content.loop_times) {
+        const v = r.content.loop_times;                     // newer aircraft store it shifted one byte
+        const c = v >= 256 && v % 256 === 0 ? v / 256 : v;
+        return c < 3000 ? c : null;
+      }
+      if (r.type === 'CenterBattery' && r.content.numberOfDischarges) return r.content.numberOfDischarges;   // older aircraft
+    }
+  } catch {}
+  return null;
 }
 
 function trackPoints(frames, entry) {

@@ -359,7 +359,8 @@ $('#impMigrate').onchange = async e => {
   const r = await fetch('api/migrate', { method: 'POST', body: f });
   if (!r.ok) return impWrite('Failed: ' + await r.text());
   const o = await r.json();
-  impWrite(`Moved ${o.flights} flights, ${o.tracks} GPS tracks and ${o.keys} DJI keys${o.skipped ? ` (${o.skipped} were already here)` : ''}, plus batteries, drones, clients, sites and jobs.`);
+  if (o.extras) impWrite(`Added battery cycle counts to ${o.extras} flights.`);
+  if (o.flights || !o.extras) impWrite(`Moved ${o.flights} flights, ${o.tracks} GPS tracks and ${o.keys} DJI keys${o.skipped ? ` (${o.skipped} were already here)` : ''}.`);
   await load();
 };
 

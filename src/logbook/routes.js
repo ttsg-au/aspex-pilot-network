@@ -135,6 +135,11 @@ router.post('/logbook/api/migrate', raw('100mb'), async (req, res) => {
       if (keyByFile[base]) { store.putKeys(f.sha256, keyByFile[base]); out.keys++; }
     }
     store.renumber(uid);
+    // extra per-flight figures worked out later from the original files (e.g. battery cycle counts)
+    for (const [sha, extra] of Object.entries(b.flightExtras || {})) {
+      const f = store.flightBySha(uid, sha);
+      if (f && extra && Number.isFinite(extra.batteryCycles)) { db.update('lbFlights', f.id, { batteryCycles: extra.batteryCycles }); out.extras = (out.extras || 0) + 1; }
+    }
     if (b.inventory) store.saveInventory(uid, b.inventory);
     for (const kind of ['clients', 'sites', 'jobs']) {
       for (const [key, item] of Object.entries(b.ops?.[kind] || {})) if (store.safeKey(key) && item) store.putOps(uid, kind, key, item);

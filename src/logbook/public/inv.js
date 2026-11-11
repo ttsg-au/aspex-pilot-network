@@ -9,7 +9,11 @@ const RULES = {
   lowCell: { amber: 3.4, red: 3.2 },         // V, lowest cell seen, last 5 flights
   temp: { amber: 60, red: 65 },              // °C, hottest seen, last 5 flights
   fixedAfter: 5,                             // flights with identical capacity before we call the gauge unreliable
+  cycles: { amber: 150, red: 200 },          // charge cycles the battery reports (DJI's warranty covers 200 cycles / 12 months)
+  idleDays: 90,                              // not used for this long: do a full charge-and-discharge
 };
+const cyclesOf = fl => { const c = fl.map(f => f.batteryCycles).filter(Number.isFinite); return c.length ? Math.max(...c) : null; };
+const daysSince = s => s ? Math.floor((Date.now() - new Date(s.replace(' ', 'T'))) / 864e5) : null;
 const RANK = { none: -1, green: 0, grey: 1, amber: 2, red: 3 };
 const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
 
@@ -59,7 +63,19 @@ function batteryHealth(fl) {
     else if (maxT >= RULES.temp.amber) bump('amber', `<b>Reached ${num(maxT, 0)} °C</b> in a recent flight — on the hot side.`);
   }
 
-  if (out.level === 'green' && !out.reasons.some(r => r.lvl !== 'green')) out.reasons.push({ lvl: 'green', text: 'Cell balance, voltage and temperature all normal.' });
+  // charge cycles
+  const cyc = cyclesOf(l);
+  out.cycles = cyc;
+  if (cyc != null) {
+    if (cyc >= RULES.cycles.red) bump('red', `<b>${cyc} charge cycles.</b> Past the ${RULES.cycles.red} cycles DJI's warranty covers; DJI's app warns from here. Expect shorter flights - plan to replace it.`);
+    else if (cyc >= RULES.cycles.amber) bump('amber', `<b>${cyc} charge cycles</b> - getting towards ${RULES.cycles.red}. Budget for a replacement.`);
+  }
+  // sitting unused
+  const idle = daysSince(l[l.length - 1].startLocal);
+  out.idle = idle;
+  if (idle >= RULES.idleDays) out.reasons.push({ lvl: 'info', text: `<b>Not flown for ${idle} days.</b> Give it a full charge, fly or discharge it down, then return it to storage charge - lithium batteries should be cycled at least every 3 months.` });
+
+  if (out.level === 'green' && !out.reasons.some(r => r.lvl !== 'green' && r.lvl !== 'info')) out.reasons.push({ lvl: 'green', text: 'Cell balance, voltage and temperature all normal.' });
   out.last = l[l.length - 1].startLocal; out.first = l[0].startLocal;
   return out;
 }
@@ -108,6 +124,21 @@ function sourceCompare(rows) {
     <div class="note">Averages count only batteries that appear in imported flights. Flights flown before this logbook started aren't counted, so older batteries look younger than they are.</div></div>`;
 }
 
+// Storage and care: what's due, plus DJI's handling basics.
+function storagePanel(rows) {
+  const live = rows.filter(r => r.b.status !== 'Retired' && r.fl.length);
+  const idle = live.filter(r => r.h.idle >= RULES.idleDays).sort((a, b) => b.h.idle - a.h.idle);
+  const old = live.filter(r => r.h.cycles >= RULES.cycles.amber).sort((a, b) => b.h.cycles - a.h.cycles);
+  const label = r => `<b>${esc(r.b.code || r.sn)}</b>`;
+  return `<div class="panel" style="margin-top:12px"><h2>Storage and cycles <span class="hint">what needs doing now</span></h2>
+    <div class="legend">
+      <div><h5>Needs a full cycle - ${idle.length}</h5>${idle.length ? idle.map(r => `${label(r)} ${r.h.idle} days`).join(' · ') : 'None - everything has been used in the last 3 months.'}</div>
+      <div><h5>High cycle count - ${old.length}</h5>${old.length ? old.map(r => `${label(r)} ${r.h.cycles}`).join(' · ') : `None at ${RULES.cycles.amber}+ cycles.`}</div>
+      <div><h5>Storage basics</h5>Charge within a couple of days of flying. Store at 40-60% (storage charge) and let the battery's auto self-discharge do the rest. Keep cool and dry; don't store full or flat for long. Cycle every 3 months.</div>
+      <div><h5>Cycle counts</h5>Read from the battery itself in each flight record. A cycle is roughly one full discharge, so two half flights = one cycle.</div>
+    </div></div>`;
+}
+
 function renderBatteries() {
   const rows = Object.entries(inv.batteries).map(([sn, b]) => { const fl = flightsOf('batterySn', sn); return { sn, b, fl, h: batteryHealth(fl) }; });
   const count = lvl => rows.filter(r => r.b.status !== 'Retired' && r.h.level === lvl).length;
@@ -151,8 +182,11 @@ function renderBatteries() {
         <tr><td>Lowest cell voltage</td><td>under ${RULES.lowCell.amber} V</td><td>under ${RULES.lowCell.red} V</td><td>last 5 flights</td></tr>
         <tr><td>Peak battery temperature</td><td>${RULES.temp.amber} °C or more</td><td>${RULES.temp.red} °C or more</td><td>last 5 flights</td></tr>
         <tr><td>Gauge not reporting</td><td colspan="2">identical capacity on ${RULES.fixedAfter}+ flights</td><td>all flights</td></tr>
+        <tr><td>Charge cycles (reported by the battery)</td><td>${RULES.cycles.amber} or more</td><td>${RULES.cycles.red} or more</td><td>latest flight</td></tr>
+        <tr><td>Not flown (shown under Storage, doesn't change the colour)</td><td colspan="2">${RULES.idleDays} days or more</td><td>last flight</td></tr>
       </table></details></div>
     </div>
+    ${storagePanel(rows)}
     ${sourceCompare(rows)}
     <div class="panel" style="margin-top:12px"><h2>Batteries <span class="hint">give each battery its code · status is your own call; health is worked out</span></h2>
       <div style="display:flex;gap:8px;align-items:center;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid var(--line,#e5e5e5)">
@@ -164,7 +198,7 @@ function renderBatteries() {
         <span class="muted" style="font-size:12px">New batteries also appear by themselves after their first imported flight.</span>
       </div>
       <div class="scroll" style="max-height:none"><table>
-        <tr><th>Health</th><th>Code</th><th>Source</th><th>Serial</th><th>Why</th><th>Capacity trend</th><th class="n">Flights</th><th class="n">Hours</th><th>Last used</th><th>Status</th><th style="width:18%">Notes</th></tr>
+        <tr><th>Health</th><th>Code</th><th>Source</th><th>Serial</th><th>Why</th><th>Capacity trend</th><th class="n">Cycles</th><th class="n">Flights</th><th class="n">Hours</th><th>Last used</th><th>Status</th><th style="width:18%">Notes</th></tr>
         ${rows.map(({ sn, b, fl, h }) => `<tr class="${b.status === 'Retired' ? 'retired' : ''}" data-kind="batteries" data-sn="${esc(sn)}">
           <td style="white-space:nowrap">${h.level === 'none' ? '<span class="muted">' + LEVEL_LABEL.none + '</span>' : `<span class="hdot ${h.level}"></span>${LEVEL_LABEL[h.level]}`}</td>
           <td><input class="c" data-f="code" value="${esc(b.code)}" placeholder="M3-?"></td>
@@ -172,7 +206,7 @@ function renderBatteries() {
           <td class="sn">${esc(sn)}</td>
           <td class="why">${h.reasons.filter(r => r.lvl !== 'green' || h.level === 'green').map(r => r.text).join('<br>')}</td>
           <td>${h.fixed ? '<span class="muted">flat — not measured</span>' : sparkline(h.caps, h.design)}</td>
-          <td class="n">${fl.length}</td><td class="n">${hrs(fl.reduce((s, f) => s + (f.durationMin || 0), 0))}</td><td>${dateOnly(h.last)}</td>
+          <td class="n">${h.cycles ?? '<span class="muted">–</span>'}</td><td class="n">${fl.length}</td><td class="n">${hrs(fl.reduce((s, f) => s + (f.durationMin || 0), 0))}</td><td>${dateOnly(h.last)}${h.idle != null && h.idle >= 30 ? `<span class="sn-sub">${h.idle} days ago</span>` : ''}</td>
           <td><select data-f="status">${opts(BAT_STATUS, b.status || 'In service')}</select></td>
           <td><input class="notes" data-f="notes" value="${esc(b.notes)}"></td></tr>`).join('')}
       </table></div>
