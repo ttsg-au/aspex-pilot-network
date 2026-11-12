@@ -195,7 +195,27 @@ function renderMaint(sn) {
 }
 
 // ---------- Reports: the three CASA logs ----------
-let repKind = 'operational';
+let repKind = 'operational', repFilter = '';
+const repSort = {};                                  // per log and table: { col, dir }
+function applyRepView() {
+  const v = $('#v-reports'), words = repFilter.toLowerCase().split(/\s+/).filter(Boolean);
+  v.querySelectorAll('table.rlist').forEach((t, ti) => {
+    const rows = [...t.querySelectorAll('tr')].slice(1), so = repSort[repKind + ti];
+    if (so && rows.length > 1) {
+      const val = tr => { const td = tr.cells[so.col]; return td ? (td.dataset.v ?? td.textContent.trim()) : ''; };
+      const numeric = rows.every(tr => { const x = val(tr); return x === '' || x === '–' || !isNaN(Number(x.replace(/,/g, ''))); });
+      rows.sort((a, b) => {
+        const x = val(a), y = val(b);
+        const c = numeric ? (Number(x.replace(/,/g, '')) || 0) - (Number(y.replace(/,/g, '')) || 0) : x.localeCompare(y, 'en-AU', { numeric: true });
+        return c * so.dir;
+      }).forEach(tr => t.appendChild(tr));
+    }
+    t.querySelectorAll('tr:first-child th').forEach((th, ci) => { th.textContent = th.textContent.replace(/ [▲▼]$/, '') + (so && so.col === ci ? (so.dir > 0 ? ' ▲' : ' ▼') : ''); });
+    let shown = 0;
+    for (const tr of rows) { const ok = words.every(w => tr.textContent.toLowerCase().includes(w)); tr.style.display = ok ? '' : 'none'; if (ok) shown++; }
+    if (t.id === 'rTable' && $('#rCount')) $('#rCount').textContent = words.length ? `${shown} of ${rows.length} flights match "${repFilter.trim()}".` : `${rows.length} flights.`;
+  });
+}
 const inRange = (f, from, to) => { const d = f.startLocal.slice(0, 10); return (!from || d >= from) && (!to || d <= to); };
 const where = f => { const sid = siteOfFlight[f.sha256]; return sid ? siteName(sid) : f.takeoffLat != null ? `${num(f.takeoffLat, 4)}, ${num(f.takeoffLon, 4)}` : '–'; };
 const acDesc = sn => { const a = inv.aircraft[sn] || {}; return [a.code, model(a.model), a.registration ? 'rego ' + a.registration : ''].filter(Boolean).join(' · '); };
@@ -231,10 +251,10 @@ function reportData(from, to) {
       const m = maintFor(sn).filter(([, x]) => (!from || x.date >= from) && (!to || x.date <= to));
       return `<h3 style="margin:18px 0 4px">${esc(acDesc(sn) || sn)} <span class="muted" style="font-weight:400">serial ${esc(sn)}</span></h3>
         <p>Total ${num(acHours(sn), 1)} flight hours, ${all.filter(f => f.isFlight && f.aircraftSn === sn).length} flights. ${d.last ? `Last inspection ${dateOnly(d.last.date)}; ` : ''}next inspection due in ${num(d.left, 1)} h (every ${d.every} h). Status: ${esc(inv.aircraft[sn].status || 'In service')}.</p>
-        <table class="sum"><tr><th>Date</th><th>Maintenance / defect</th><th class="n">Aircraft h</th><th>Details</th><th>By</th></tr>
+        <table class="sum rlist"><tr><th>Date</th><th>Maintenance / defect</th><th class="n">Aircraft h</th><th>Details</th><th>By</th></tr>
         ${[...m.map(([, x]) => [x.date, x.type, Number(x.hoursAt), [x.checks ? 'Checked: ' + checkSummaryText(x.checks) : '', x.parts && 'Parts: ' + x.parts, x.firmware && 'Firmware: ' + x.firmware, x.notes].filter(Boolean).join('. '), x.by]),
            ...defects.map(f => [f.startLocal.slice(0, 10), 'Defect after flight ' + (f.flightNo || ''), acHours(sn, f.startLocal.slice(0, 10)), f.defect || '(no details)', picOf(f)])]
-          .sort((a, b) => a[0].localeCompare(b[0])).map(r => `<tr><td>${dateOnly(r[0])}</td><td>${esc(r[1])}</td><td class="n">${num(r[2], 1)}</td><td style="font-size:12px">${esc(r[3])}</td><td>${esc(r[4] || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nothing in this period</td></tr>'}</table>`;
+          .sort((a, b) => a[0].localeCompare(b[0])).map(r => `<tr><td data-v="${esc(r[0])}">${dateOnly(r[0])}</td><td>${esc(r[1])}</td><td class="n">${num(r[2], 1)}</td><td style="font-size:12px">${esc(r[3])}</td><td>${esc(r[4] || '')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nothing in this period</td></tr>'}</table>`;
     }).join(''),
     cols: [], rows: [],
   };
@@ -247,21 +267,30 @@ function renderReports() {
     <div class="tools noprint" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 14px">
       <nav class="subtabs" style="margin:0">${[['operational', 'Operational log'], ['pilot', 'Remote pilot log'], ['technical', 'Technical log']].map(([k, l]) => `<button data-r="${k}" class="${k === repKind ? 'on' : ''}">${l}</button>`).join('')}</nav>
       <label>From <input type="date" id="rFrom" value="${from}"></label><label>To <input type="date" id="rTo" value="${to}"></label>
+      <label>Filter <input type="search" id="rFilter" value="${esc(repFilter)}" placeholder="e.g. Junee, BVLOS, 2025-03" style="width:220px"></label>
       <button class="btn sm" id="rPrint">Print / save as PDF</button>${r.rows.length ? '<button class="btn sm ghost" id="rCsv">Download CSV</button>' : ''}
     </div>
     <div class="report" id="rBody" style="padding:4px 14px 14px">
       <h2 class="ptitle">${r.title}${from || to ? ` <span class="muted" style="font-weight:400">${from ? dateOnly(from) : 'start'} – ${to ? dateOnly(to) : 'today'}</span>` : ''}</h2>
       ${r.head || ''}
-      ${r.rows.length ? `<table class="sum"><tr>${r.cols.map(c => `<th>${c}</th>`).join('')}</tr>${r.rows.map(row => `<tr>${row.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>
-        <p class="muted">${r.rows.length} flights.</p>` : (r.cols.length ? '<p class="muted">No flights in this period.</p>' : '')}
+      ${r.rows.length ? `<table class="sum rlist" id="rTable"><tr>${r.cols.map(c => `<th>${c}</th>`).join('')}</tr>${r.rows.map(row => `<tr>${row.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>
+        <p class="muted" id="rCount">${r.rows.length} flights.</p>` : (r.cols.length ? '<p class="muted">No flights in this period.</p>' : '')}
     </div></div>`;
   v.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { repKind = b.dataset.r; renderReports(); });
+  // click a column heading to sort (again to reverse); the filter box hides rows that don't contain every word typed
+  v.querySelectorAll('table.rlist').forEach((t, ti) => t.querySelectorAll('tr:first-child th').forEach((th, ci) => {
+    th.style.cursor = 'pointer'; th.title = 'Click to sort';
+    th.onclick = () => { const cur = repSort[repKind + ti]; repSort[repKind + ti] = { col: ci, dir: cur && cur.col === ci ? -cur.dir : 1 }; applyRepView(); };
+  }));
+  $('#rFilter').oninput = e => { repFilter = e.target.value; applyRepView(); };
+  applyRepView();
   $('#rFrom').onchange = $('#rTo').onchange = renderReports;
   $('#rPrint').onclick = () => window.print();
   $('#rCsv') && ($('#rCsv').onclick = () => {
     const q = c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c;
-    const csv = '﻿' + [r.cols, ...r.rows].map(row => row.map(c => q(String(c ?? ''))).join(',')).join('\r\n');
+    const vis = [...v.querySelectorAll('#rTable tr')].slice(1).filter(tr => tr.style.display !== 'none').map(tr => [...tr.cells].map(td => td.textContent));
+    const csv = '﻿' + [r.cols, ...vis].map(row => row.map(c => q(String(c ?? ''))).join(',')).join('\r\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    a.download = `${r.title}${from ? ' from ' + from : ''}${to ? ' to ' + to : ''}.csv`; a.click();
+    a.download = `${r.title}${from ? ' from ' + from : ''}${to ? ' to ' + to : ''}${repFilter.trim() ? ' - ' + repFilter.trim().replace(/[\\/:*?"<>|]/g, '') : ''}.csv`; a.click();
   });
 }
