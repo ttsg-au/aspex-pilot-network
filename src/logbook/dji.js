@@ -19,10 +19,11 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 
 // A file is "done" once it has a result that re-uploading can't improve.
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
-const isDone = (f) => f && FINAL.has(f.track)
-  && !(f.track === 'ok' && f.batteryCycles == null && !f.batteryCyclesChecked);   // look again for a missing charge-cycle count
+const isDone = (f) => f && FINAL.has(f.track);
+// Logged before charge cycles were read: a browser re-import can fill the count in.
+const needsCycles = (f) => f && f.track === 'ok' && f.batteryCycles == null && !f.batteryCyclesChecked;
 
-async function processFile(user, buf, file) {
+async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const uid = user.id;
   const DJILog = await loadParser();
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
@@ -32,7 +33,7 @@ async function processFile(user, buf, file) {
   if (existing && FINAL.has(existing.track)) {
     // Already logged. The only thing a re-import can add is a missing charge-cycle count, and it
     // changes nothing else on the flight (the pilot's CASA details stay as they are).
-    if (isDone(existing)) return { file, sha256, status: 'already had', flight: existing };
+    if (!cycleCheck || !needsCycles(existing)) return { file, sha256, status: 'already had', flight: existing };
     let note;
     try {
       const log = new DJILog(new Uint8Array(buf));
@@ -41,7 +42,7 @@ async function processFile(user, buf, file) {
       if (!keys && log.version >= 13) return { file, sha256, status: 'already had', flight: existing, note: 'add the DJI key in Settings to read its battery cycles' };
       const cyc = batteryCycles(log, keys);
       note = cyc.note;
-      const flight = db.update('lbFlights', existing.id, { batteryCycles: cyc.cycles ?? null, batteryCyclesChecked: true, batteryCyclesNote: note });
+      const flight = db.update('lbFlights', existing.id, { batteryCycles: cyc.cycles ?? null, batteryCyclesChecked: !/^records unreadable/.test(note), batteryCyclesNote: note });
       return { file, sha256, status: 'cycles checked', flight };
     } catch (e) { return { file, sha256, status: 'already had', flight: existing, note: 'cycle check failed: ' + String(e?.message || e) }; }
   }

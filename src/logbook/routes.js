@@ -94,7 +94,7 @@ router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-
   try {
     const name = path.basename(String(req.query.name || ''));
     if (!/^(DJI)?FlightRecord_.*\.txt$/i.test(name)) return fail(res, 'That isn’t a DJI flight record (DJIFlightRecord_….txt)');
-    const r = await dji.processFile(req.lb, req.body, name);
+    const r = await dji.processFile(req.lb, req.body, name, { cycleCheck: true });   // only browser drops look again for cycles
     const line = { file: name, status: r.status, track: r.flight.track, via: 'browser' };
     if (r.status !== 'already had') store.noteUpload(req.lb.id, line);
     res.json({ ...line, summary: summary(r) });
