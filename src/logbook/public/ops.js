@@ -493,7 +493,9 @@ $('#skySync').onclick = async () => {
     const r = await fetch('api/skydio/sync', { method: 'POST' });
     if (!r.ok) throw new Error(await r.text());
     const o = await r.json();
-    impWrite(`Skydio Cloud: ${o.found} flights found, ${o.added} new, ${o.updated} already in the logbook${o.skipped ? `, ${o.skipped} skipped (no take-off time)` : ''}.`);
+    impWrite(`Skydio Cloud: ${o.found} flights found, ${o.added} new, ${o.updated} already in the logbook${o.skipped ? `, ${o.skipped} skipped (no take-off time)` : ''}. ${o.tracks} GPS tracks fetched.`);
+    if (o.telemetryError) impWrite(o.telemetryError);
+    if (o.mediaError) impWrite(o.mediaError);
     await load();
   } catch (e) { impWrite('Skydio sync failed: ' + e.message); }
   $('#skySync').textContent = 'Sync Skydio flights'; impRefresh();
