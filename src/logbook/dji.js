@@ -21,7 +21,7 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
 const isDone = (f) => f && FINAL.has(f.track);
 // Logged before charge cycles were read: a browser re-import can fill the count in.
-const CYCLE_CHECK = 2;   // bump to let browser re-imports read the cycle count again
+const CYCLE_CHECK = 3;   // bump to let browser re-imports read the cycle count again
 const needsCycles = (f) => f && f.track === 'ok' && (f.batteryCycles == null ? !f.batteryCyclesChecked : f.batteryCyclesVer !== CYCLE_CHECK);
 
 async function processFile(user, buf, file, { cycleCheck = false } = {}) {
@@ -122,8 +122,12 @@ function batteryCycles(log, keychains) {
     }
   } catch (e) { return { cycles: null, note: 'records unreadable: ' + String(e?.message || e).slice(0, 120) }; }
   if (staticRec && staticRec.loop_times) {
-    const v = staticRec.loop_times;                      // newer aircraft store it shifted one byte
-    const c = v >= 256 && v % 256 === 0 ? v / 256 : v;
+    const v = staticRec.loop_times;
+    // On newer aircraft (e.g. Mavic 3 Enterprise) the record has one extra byte, so the reader sees every
+    // field one byte early: designed capacity 5000 reads as 1280000 (5000 x 256). Then the real cycle count
+    // is the high byte of loop_times plus, as its own high byte, the lowest byte of the next field.
+    const shifted = staticRec.designed_capacity % 256 === 0 && staticRec.designed_capacity >= 256 * 1000;
+    const c = shifted ? (v >> 8) | ((staticRec.full_voltage & 0xff) << 8) : v;
     const raw = `raw loop_times ${v}, design ${staticRec.designed_capacity} mAh, full ${staticRec.full_voltage} mV, life ${staticRec.battery_life}, type ${staticRec.battery_type}, version ${(staticRec.version_number || []).join('.')}`;
     if (c < 3000) return { cycles: c, note: raw };
   }
