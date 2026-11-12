@@ -44,6 +44,15 @@ async function vehicleNames(token) {
   } catch { return {}; }          // the token may not have Vehicles access; flights still import
 }
 
+// Skydio's API gives internal type codes (e.g. "R3" for a Skydio 2+); the serial prefix says it plainly.
+function skydioModel(type, serial = '') {
+  const sn = String(serial);
+  if (/^Skydio2P/i.test(sn)) return 'Skydio 2+';
+  if (/^Skydio2/i.test(sn)) return 'Skydio 2';
+  if (/^X10/i.test(sn) || /^X10/i.test(type || '')) return 'Skydio X10';
+  if (/^X2/i.test(sn) || /^X2/i.test(type || '')) return 'Skydio X2';
+  return type ? `Skydio ${type}` : 'Skydio';
+}
 function toEntry(f, veh) {
   const start = new Date(f.takeoff), end = f.landing ? new Date(f.landing) : null;
   if (!f.flight_id || isNaN(start)) return null;
@@ -55,7 +64,7 @@ function toEntry(f, veh) {
     durationMin: round(mins, 1),
     takeoffLat: f.takeoff_latitude != null ? round(f.takeoff_latitude, 6) : null,
     takeoffLon: f.takeoff_longitude != null ? round(f.takeoff_longitude, 6) : null,
-    aircraftModel: v.type ? `Skydio ${v.type}` : 'Skydio', aircraftName: v.name || '', aircraftSn: f.vehicle_serial || '',
+    aircraftModel: skydioModel(v.type, f.vehicle_serial), aircraftName: v.name || '', aircraftSn: f.vehicle_serial || '',
     batterySn: f.battery_serial || '', skydioPilot: f.user_email || '',
     isFlight: mins >= 0.1, track: f.has_telemetry ? 'in Skydio Cloud' : 'none', trackPoints: 0,
   };

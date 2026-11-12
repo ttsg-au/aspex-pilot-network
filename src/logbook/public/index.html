@@ -261,7 +261,7 @@ const num = (v, dp = 0) => v == null || v === '' ? '–' : Number(v).toLocaleStr
 const hrs = mins => num(mins / 60, 1);
 const air = f => f.durationMin ?? 0;   // DJI's recorded flight time - same figure everywhere
 const base = f => f.file.replace(/\.txt$/i, '');
-const MODEL = { Mavic3Enterprise: 'Mavic 3 Enterprise', Phantom4Pro: 'Phantom 4 Pro', Phantom4ProV2: 'Phantom 4 Pro V2', Mini2: 'Mini 2', Matrice30: 'Matrice 30', Matrice350RTK: 'Matrice 350 RTK' };
+const MODEL = { Mavic3Enterprise: 'Mavic 3 Enterprise', Phantom4Pro: 'Phantom 4 Pro', Phantom4ProV2: 'Phantom 4 Pro V2', Mini2: 'Mini 2', Matrice30: 'Matrice 30', Matrice350RTK: 'Matrice 350 RTK', 'Skydio R3': 'Skydio 2+' };
 const model = m => MODEL[m] || m || '–';
 const dateOnly = s => s ? new Date(s.replace(' ', 'T')).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 const timeOnly = s => s ? s.slice(11, 16) : '';
