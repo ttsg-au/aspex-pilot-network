@@ -54,6 +54,14 @@ router.post('/logbook/api/flights/:sha', (req, res) => {          // CASA fields
 router.post('/logbook/api/sites/:id/kml', raw('20mb'), (req, res) => {
   try { res.json(sites.setBoundary(req.lb.id, store.safeKey(req.params.id), req.body, req.query.name || '')); } catch (e) { fail(res, e); }
 });
+router.post('/logbook/api/sites-from-points', express.json({ limit: '2mb' }), (req, res) => {
+  try { res.json(sites.sitesFromPoints(req.lb.id, (req.body || {}).sites)); } catch (e) { fail(res, e); }
+});
+router.get('/logbook/api/near', async (req, res) => {
+  const lat = Number(req.query.lat), lon = Number(req.query.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return fail(res, 'bad position');
+  res.json({ name: await sites.nearestPlace(lat, lon) });
+});
 router.post('/logbook/api/sites/:id/airspace', async (req, res) => {
   try { res.json(await sites.checkAirspace(req.lb.id, store.safeKey(req.params.id), req.query.refresh === '1')); } catch (e) { fail(res, e); }
 });

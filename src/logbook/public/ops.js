@@ -154,59 +154,108 @@ $('#newJob').onclick = async () => {
   await saveOps({ jobs: { [id]: { name: '', status: 'Planned', opType: 'VLOS', start: new Date().toISOString().slice(0, 10) } } }, 'Job created');
   curJob = id; renderJobs(); $('#jobEdit [data-f=name]')?.focus();
 };
-// Create jobs for past flights from the sites they were flown at: one job per visit
-// (flying days at the same site less than a week apart count as one visit). Shown for checking before anything is created.
+// Create jobs for past flights: one job per visit (flying days at the same place less than a week apart).
+// Flights on a known site use that site. Flights with no site are grouped by take-off point (within about 5 km)
+// into new places, each named after the nearest town and given an approximate site. Checked before anything is created.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-function proposeJobsFromSites() {
-  const bySite = {};
-  for (const f of all) if (f.isFlight && !jobOf(f) && siteOfFlight[f.sha256] && dayOf(f)) (bySite[siteOfFlight[f.sha256]] ||= []).push(f);
+const monthYear = d => { const [y, m] = d.split('-'); return `${MONTHS[Number(m) - 1]} ${y}`; };
+function proposeJobs() {
+  const free = all.filter(f => f.isFlight && !jobOf(f) && dayOf(f)).sort((a, b) => a.startLocal.localeCompare(b.startLocal));
+  const groups = {}, places = [];
+  for (const f of free) {
+    const sid = siteOfFlight[f.sha256];
+    if (sid) { (groups['s:' + sid] ||= { siteId: sid, flights: [] }).flights.push(f); continue; }
+    if (f.takeoffLat == null || (!f.takeoffLat && !f.takeoffLon)) continue;           // no GPS position: left alone
+    const pt = [f.takeoffLon, f.takeoffLat];
+    let pl = places.find(p => Geo.metres([p.lon, p.lat], pt) <= 5000);
+    if (!pl) { pl = { idx: places.length, lat: f.takeoffLat, lon: f.takeoffLon, n: 0, points: [], name: '' }; places.push(pl); }
+    pl.points.push(pt); pl.n++;
+    pl.lat += (f.takeoffLat - pl.lat) / pl.n; pl.lon += (f.takeoffLon - pl.lon) / pl.n;     // running centre
+    (groups['p:' + pl.idx] ||= { place: pl, flights: [] }).flights.push(f);
+  }
   const out = [];
-  for (const [siteId, fl] of Object.entries(bySite)) {
-    fl.sort((a, b) => a.startLocal.localeCompare(b.startLocal));
+  for (const g of Object.values(groups)) {
     let cur = null;
-    for (const f of fl) {
+    for (const f of g.flights) {
       const d = dayOf(f);
       if (cur && (Date.parse(d) - Date.parse(cur.end)) / 864e5 < 7) { cur.end = d; cur.flights.push(f); continue; }
-      cur = { siteId, start: d, end: d, flights: [f] }; out.push(cur);
+      cur = { siteId: g.siteId || '', place: g.place || null, start: d, end: d, flights: [f] }; out.push(cur);
     }
   }
   for (const p of out) {
     p.mins = p.flights.reduce((s, f) => s + (f.durationMin || 0), 0);
     p.days = new Set(p.flights.map(dayOf)).size;
-    const [y, m] = p.start.split('-');
-    p.name = `${siteName(p.siteId)} – ${MONTHS[Number(m) - 1]} ${y}`;
   }
-  return out.sort((a, b) => b.start.localeCompare(a.start));
+  return { props: out.sort((a, b) => b.start.localeCompare(a.start)), places };
 }
-$('#jobsFromSites').onclick = () => {
+$('#jobsFromSites').onclick = async () => {
   curJob = null; renderJobList();
-  const props = proposeJobsFromSites();
-  const noSite = all.filter(f => f.isFlight && !jobOf(f) && !siteOfFlight[f.sha256]).length;
+  const { props, places } = proposeJobs();
+  const noPos = all.filter(f => f.isFlight && !jobOf(f) && !siteOfFlight[f.sha256] && (f.takeoffLat == null || (!f.takeoffLat && !f.takeoffLon))).length;
+  const placeLabel = pl => pl.name ? `Near ${pl.name}` : `Near ${num(pl.lat, 2)}, ${num(pl.lon, 2)}`;
+  const label = p => p.place ? placeLabel(p.place) : siteName(p.siteId);
+  // "Near X – Mar 2026", or the start date when there's more than one visit to the same place that month
+  const defName = p => label(p) + ' – ' + (props.filter(q => label(q) === label(p) && monthYear(q.start) === monthYear(p.start)).length > 1 ? dateOnly(p.start) : monthYear(p.start));
+  const edited = new Set();
   const el = $('#jobEdit');
-  el.innerHTML = `<h2>Create jobs from sites</h2>
-    <p class="muted">Flights that are on a site but not in a job, grouped into one job per visit (flying days at the same site less than a week apart count as one visit). Untick any you don't want, then create. You can rename jobs and add the client afterwards.</p>
-    ${props.length ? `<table><tr><th></th><th>Job name</th><th>Dates</th><th class="n">Days</th><th class="n">Flights</th><th class="n">Hours</th></tr>
-    ${props.map((p, i) => `<tr><td><input type="checkbox" data-p="${i}" checked></td><td><input data-name="${i}" value="${esc(p.name)}" style="width:100%;font:inherit;padding:3px"></td>
+  el.innerHTML = `<h2>Create jobs for past flights</h2>
+    <p class="muted">Flights that aren't in a job yet, grouped into one job per visit (flying days at the same place less than a week apart count as one visit). Flights on one of your sites use that site. Flights with no site are grouped by where they took off, named after the nearest town, and given a new site (an approximate circle - you can load the farm KML later). Untick any you don't want, change names if you like, then create.</p>
+    ${props.length ? `<p id="jfsLook" class="muted"></p><table><tr><th></th><th>Job name</th><th>Site</th><th>Dates</th><th class="n">Days</th><th class="n">Flights</th><th class="n">Hours</th></tr>
+    ${props.map((p, i) => `<tr><td><input type="checkbox" data-p="${i}" checked></td><td><input data-name="${i}" value="${esc(defName(p))}" style="width:100%;font:inherit;padding:3px"></td>
+      <td data-site="${i}">${p.place ? '<span class="pill">new</span> ' + esc(label(p)) : esc(label(p))}</td>
       <td>${dateOnly(p.start)}${p.end !== p.start ? ' – ' + dateOnly(p.end) : ''}</td><td class="n">${p.days}</td><td class="n">${p.flights.length}</td><td class="n">${hrs(p.mins)}</td></tr>`).join('')}</table>
     <p><button class="btn" id="jfsGo">Create ticked jobs</button> <button class="btn ghost" id="jfsCancel">Cancel</button></p>`
-    : '<p>Nothing to do: every flight on a site is already in a job.</p>'}
-    ${noSite ? `<p class="muted">${noSite} flight${noSite === 1 ? '' : 's'} with no site (for example test flights at home) ${noSite === 1 ? 'is' : 'are'} left as they are. Add a site in the Sites tab if any of them were jobs.</p>` : ''}`;
+    : '<p>Nothing to do: every flight is already in a job.</p>'}
+    ${noPos ? `<p class="muted">${noPos} flight${noPos === 1 ? ' has' : 's have'} no GPS position, so ${noPos === 1 ? 'it is' : 'they are'} left as ${noPos === 1 ? 'it is' : 'they are'}. Add ${noPos === 1 ? 'it' : 'them'} to a job by hand if needed.</p>` : ''}`;
   if (!props.length) return;
+  el.querySelectorAll('[data-name]').forEach(x => x.addEventListener('input', () => edited.add(x.dataset.name)));
   $('#jfsCancel').onclick = () => renderJobEdit();
+  // look up the nearest town for each new place (one a second), filling names in as they arrive
+  let looking = true;
+  (async () => {
+    for (const [n, pl] of places.entries()) {
+      if (!looking) return;
+      if ($('#jfsLook')) $('#jfsLook').textContent = `Looking up place names… ${n + 1} of ${places.length}`;
+      try { pl.name = (await (await fetch(`api/near?lat=${pl.lat}&lon=${pl.lon}`)).json()).name || ''; } catch { }
+      props.forEach((p, i) => {
+        if (p.place !== pl) return;
+        const inp = el.querySelector(`[data-name="${i}"]`), cell = el.querySelector(`[data-site="${i}"]`);
+        if (inp && !edited.has(String(i))) inp.value = defName(p);
+        if (cell) cell.innerHTML = '<span class="pill">new</span> ' + esc(label(p));
+      });
+    }
+    if ($('#jfsLook')) $('#jfsLook').textContent = '';
+  })();
   $('#jfsGo').onclick = async () => {
+    looking = false;
+    const ticked = [...el.querySelectorAll('[data-p]')].filter(cb => cb.checked).map(cb => ({ p: props[cb.dataset.p], name: el.querySelector(`[data-name="${cb.dataset.p}"]`).value.trim() }));
+    if (!ticked.length) return toast('Nothing ticked');
+    $('#jfsGo').disabled = true; $('#jfsGo').textContent = 'Creating… please wait';
+    // 1. new sites for the new places that are used
+    const newSites = [];
+    for (const pl of new Set(ticked.map(t => t.p.place).filter(Boolean))) {
+      pl.siteId = newId(placeLabel(pl));
+      newSites.push({ id: pl.siteId, name: placeLabel(pl), points: pl.points });
+    }
+    if (newSites.length) {
+      try {
+        const r = await fetch('api/sites-from-points', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sites: newSites }) });
+        if (!r.ok) throw new Error(await r.text());
+        setOps(await r.json());
+      } catch (e) { toast('Could not create the sites - is the logbook window still open?'); $('#jfsGo').disabled = false; $('#jfsGo').textContent = 'Create ticked jobs'; return; }
+    }
+    // 2. the jobs, with their flights
     const jobs = {}, flightJob = {};
-    el.querySelectorAll('[data-p]').forEach(cb => {
-      if (!cb.checked) return;
-      const p = props[cb.dataset.p], name = el.querySelector(`[data-name="${cb.dataset.p}"]`).value.trim() || p.name;
-      const id = newId(name);
-      jobs[id] = { name, siteId: p.siteId, start: p.start, end: p.end, status: 'Flown', opType: 'VLOS' };
+    for (const { p, name } of ticked) {
+      const siteId = p.place ? p.place.siteId : p.siteId, nm = name || defName(p);
+      const id = newId(nm);
+      jobs[id] = { name: nm, siteId, start: p.start, end: p.end, status: 'Flown', opType: 'VLOS' };
       for (const f of p.flights) flightJob[f.sha256] = id;
-    });
+    }
     const n = Object.keys(jobs).length;
-    if (!n) return toast('Nothing ticked');
-    $('#jfsGo').disabled = true;
-    if (await saveOps({ jobs, flightJob }, `Created ${n} job${n === 1 ? '' : 's'}, ${Object.keys(flightJob).length} flights added`)) { renderJobs(); renderFlights(); }
-    else $('#jfsGo').disabled = false;
+    if (await saveOps({ jobs, flightJob }, `Created ${n} job${n === 1 ? '' : 's'}${newSites.length ? ` and ${newSites.length} site${newSites.length === 1 ? '' : 's'}` : ''}, ${Object.keys(flightJob).length} flights added`)) {
+      renderJobs(); renderFlights(); if (typeof renderSites === 'function') renderSites();
+    } else { $('#jfsGo').disabled = false; $('#jfsGo').textContent = 'Create ticked jobs'; }
   };
 };
 $('#newClient').onclick = async () => {
@@ -240,7 +289,7 @@ function renderSiteList() {
   const counts = {}; for (const f of all) if (f.isFlight && siteOfFlight[f.sha256]) counts[siteOfFlight[f.sha256]] = (counts[siteOfFlight[f.sha256]] || 0) + 1;
   const sites = Object.entries(ops.sites).sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
   $('#siteList').innerHTML = sites.map(([id, s]) => `<div class="it ${id === curSite ? 'on' : ''}" data-id="${id}"><b>${esc(s.name || 'Untitled site')}</b>
-    <div class="s">${s.areaHa ? num(s.areaHa, 1) + ' ha' : 'no boundary yet'} · ${counts[id] || 0} flights${s.airspace ? ' · airspace checked' : ''}</div></div>`).join('')
+    <div class="s">${s.areaHa ? num(s.areaHa, 1) + ' ha' : s.boundary ? 'approximate boundary' : 'no boundary yet'} · ${counts[id] || 0} flights${s.airspace ? ' · airspace checked' : ''}</div></div>`).join('')
     || '<div class="empty">No sites yet</div>';
   $('#siteList').querySelectorAll('.it').forEach(el => el.onclick = () => { curSite = el.dataset.id; renderSites(); });
 }
@@ -299,7 +348,7 @@ function renderSiteEdit() {
       <label>&nbsp;<span class="muted" style="font-size:12.5px;padding-top:6px">${matched.length} flights matched to this site</span></label>
       <label class="full">Notes (access, gate codes, contacts…)<textarea data-f="notes">${esc(s.notes)}</textarea></label>
     </div>
-    ${s.boundary ? `<div class="facts"><div><b>${num(s.areaHa, 1)} ha</b>area inside boundary</div>
+    ${s.boundary ? `<div class="facts"><div><b>${s.areaHa ? num(s.areaHa, 1) + ' ha' : 'approx.'}</b>${s.areaHa ? 'area inside boundary' : 'circle round take-offs - load the farm KML'}</div>
         <div><b>${num(s.centroid[0], 5)}, ${num(s.centroid[1], 5)}</b>centre</div>
         <div><a class="btn ghost" href="${gmaps}" target="_blank" rel="noopener">Open in Google Maps</a></div>
         <div class="muted" style="align-self:end">from ${esc(s.boundaryFile || 'KML')}</div></div>` : ''}

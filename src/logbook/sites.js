@@ -112,4 +112,51 @@ async function checkAirspace(uid, key, refresh = false) {
   return store.updateSite(uid, key, (site) => { site.airspace = airspace; });
 }
 
-module.exports = { setBoundary, checkAirspace };
+// ---------- sites made from flight take-off points (for past flights with no farm boundary) ----------
+// The boundary is a circle around the take-offs (furthest take-off + 300 m, at least 500 m across),
+// so the flights fall inside it. It isn't the farm's real outline: load the farm KML later to replace it.
+function circleAround(points) {
+  const lat0 = points.reduce((s, p) => s + p[1], 0) / points.length, lon0 = points.reduce((s, p) => s + p[0], 0) / points.length;
+  const r = Math.max(500, Math.max(...points.map(p => Geo.metres([lon0, lat0], p))) + 300);
+  const ring = [];
+  for (let i = 0; i <= 32; i++) {
+    const a = (i % 32) / 32 * 2 * Math.PI;
+    ring.push([Math.round((lon0 + r * Math.cos(a) / (111320 * Math.cos(lat0 * Math.PI / 180))) * 1e6) / 1e6, Math.round((lat0 + r * Math.sin(a) / 110574) * 1e6) / 1e6]);
+  }
+  return [[ring]];
+}
+function sitesFromPoints(uid, list) {
+  for (const x of list || []) {
+    const key = store.safeKey(String(x.id || ''));
+    const pts = (x.points || []).map(p => [Number(p[0]), Number(p[1])]).filter(p => p.every(Number.isFinite) && Math.abs(p[1]) <= 90 && Math.abs(p[0]) <= 180).slice(0, 5000);
+    if (!key || !pts.length) continue;
+    const boundary = circleAround(pts);
+    store.putOps(uid, 'sites', key, { created: new Date().toISOString(), name: store.clean(x.name || 'Site', 120),
+      notes: 'Created from flight take-off points. The boundary is an approximate circle - load the farm KML to replace it.',
+      boundary, areaHa: null, centroid: Geo.centroid(boundary).map(v => Math.round(v * 1e6) / 1e6),
+      boundaryFile: 'From flight take-off points (approximate)', boundaryLoaded: new Date().toISOString() });
+  }
+  return store.ops(uid);
+}
+
+// Nearest town for a point (OpenStreetMap Nominatim reverse lookup, one request per second, remembered).
+const nearCache = new Map();
+let lastNear = 0;
+async function nearestPlace(lat, lon) {
+  const k = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  if (nearCache.has(k)) return nearCache.get(k);
+  let name = '';
+  if (process.env.GEO_STUB) name = 'Town ' + k;
+  else {
+    const wait = lastNear + 1100 - Date.now(); if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    lastNear = Date.now();
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=${lat}&lon=${lon}`, { headers: { 'User-Agent': 'AspexPilotNetwork/1.0 (admin@aspex.com.au)', 'Accept-Language': 'en-AU' } });
+      if (r.ok) { const a = (await r.json()).address || {}; name = a.town || a.village || a.city || a.suburb || a.hamlet || a.locality || a.municipality || a.county || ''; }
+    } catch (e) { console.warn('nearest place lookup failed:', e.message); }
+  }
+  nearCache.set(k, name);
+  return name;
+}
+
+module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace };
