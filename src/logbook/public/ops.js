@@ -76,12 +76,23 @@ function jobStats(id) {
   return { fl, mins: fl.reduce((s, f) => s + (f.durationMin || 0), 0) };
 }
 function renderJobList() {
-  const jobs = Object.entries(ops.jobs).sort((a, b) => (b[1].start || b[1].created || '').localeCompare(a[1].start || a[1].created || ''));
-  $('#jobList').innerHTML = jobs.map(([id, j]) => {
+  // two lists: upcoming and current (ends today or later, or no dates yet) soonest first, then past jobs most recent first
+  const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const when = j => j.start || j.created || '';
+  const isPast = j => { const last = j.end || j.start; return !!last && last < today; };
+  const all = Object.entries(ops.jobs);
+  const upcoming = all.filter(([, j]) => !isPast(j)).sort((a, b) => (when(a[1]) || '9999').localeCompare(when(b[1]) || '9999'));
+  const past = all.filter(([, j]) => isPast(j)).sort((a, b) => when(b[1]).localeCompare(when(a[1])));
+  const item = ([id, j]) => {
     const s = jobStats(id);
     return `<div class="it ${id === curJob ? 'on' : ''}" data-id="${id}"><b>${esc(j.name || 'Untitled job')}</b> <span class="tag">${esc(j.status || 'Planned')}</span>
-      <div class="s">${esc(clientName(j.clientId) || 'no client')} · ${esc(siteName(j.siteId) || 'no site')} · ${s.fl.length} flights, ${hrs(s.mins)} h</div></div>`;
-  }).join('') || '<div class="empty">No jobs yet</div>';
+      <div class="s">${j.start ? esc(dateOnly(j.start)) + ' · ' : ''}${esc(clientName(j.clientId) || 'no client')} · ${esc(siteName(j.siteId) || 'no site')} · ${s.fl.length} flights, ${hrs(s.mins)} h</div></div>`;
+  };
+  const head = t => `<div style="padding:8px 12px 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7a86;background:#f6f8f9">${t}</div>`;
+  $('#jobList').innerHTML = all.length
+    ? head(`Upcoming and current (${upcoming.length})`) + (upcoming.map(item).join('') || '<div class="empty">None planned</div>')
+      + head(`Past (${past.length})`) + (past.map(item).join('') || '<div class="empty">None yet</div>')
+    : '<div class="empty">No jobs yet</div>';
   $('#jobList').querySelectorAll('.it').forEach(el => el.onclick = () => { curJob = el.dataset.id; renderJobs(); });
 }
 function renderClientList() {
