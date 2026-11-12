@@ -194,6 +194,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   <div class="panel flights">
     <div class="tools">
       <input id="q" type="search" placeholder="Search date, flight no, battery, aircraft…">
+      <span id="acChip"></span>
       <span class="count" id="count"></span>
     </div>
     <div class="scroll"><table id="flights"></table></div>
@@ -305,9 +306,15 @@ function render() {
   // ---- aircraft ----
   const ac = group(flights, f => f.aircraftSn);
   $('#aircraft').innerHTML = `<tr><th>Aircraft</th><th class="n">Flights</th><th class="n">Hours</th></tr>` +
-    ac.map(g => `<tr><td>${acCode(g.key) ? `<span class="code">${esc(acCode(g.key))}</span> · ` : ''}${esc(model(g.items[0].aircraftModel))}<div class="muted sn" style="font-size:11.5px">${esc(g.key)}</div>
+    ac.map(g => `<tr class="click${acFilter === g.key ? ' sel' : ''}" data-ac="${esc(g.key)}" title="Show only this aircraft's flights (click again to show all)"><td>${acCode(g.key) ? `<span class="code">${esc(acCode(g.key))}</span> · ` : ''}${esc(model(g.items[0].aircraftModel))}<div class="muted sn" style="font-size:11.5px">${esc(g.key)}</div>
       <div class="muted" style="font-size:11.5px">last flown ${dateOnly(g.last)}</div></td>
       <td class="n">${g.items.length}</td><td class="n">${hrs(g.mins)}</td></tr>`).join('');
+
+  document.querySelectorAll('#aircraft tr[data-ac]').forEach(tr => tr.onclick = () => {
+    acFilter = acFilter === tr.dataset.ac ? '' : tr.dataset.ac;
+    document.querySelectorAll('#aircraft tr[data-ac]').forEach(x => x.classList.toggle('sel', x.dataset.ac === acFilter));
+    renderFlights(); if (acFilter) $('#flights').scrollIntoView({ behavior: 'smooth' });
+  });
 
   // ---- batteries ----
   const bg = group(flights, f => f.batterySn).sort((a, b) => b.last.localeCompare(a.last));
@@ -355,9 +362,14 @@ const COLS = [
   ['distanceKm', 'Distance km', 'n'], ['maxHeightM', 'Max height m', 'n'], ['photos', 'Photos', 'n'], ['_site', 'Site · Job'],
 ];
 
+let acFilter = '';                                   // aircraft serial chosen in the Aircraft panel ('' = all)
 function renderFlights() {
   const q = $('#q').value.trim().toLowerCase();
   let rows = all.filter(f => $('#showNf').checked || f.isFlight);
+  if (acFilter) rows = rows.filter(f => (f.aircraftSn || '–') === acFilter);
+  const acf = all.find(f => (f.aircraftSn || '–') === acFilter);
+  $('#acChip').innerHTML = acFilter ? `<span class="pill" style="cursor:pointer" id="acClear" title="Show all aircraft">Aircraft: ${esc(acf ? acLabel(acf) : acFilter)} ✕</span>` : '';
+  if (acFilter) $('#acClear').onclick = () => { acFilter = ''; document.querySelectorAll('#aircraft tr.sel').forEach(x => x.classList.remove('sel')); renderFlights(); };
   if (q) rows = rows.filter(f => [siteJobText(f), f.flightNo, f.startLocal, dateOnly(f.startLocal), f.batterySn, batCode(f.batterySn), f.aircraftSn, acCode(f.aircraftSn), model(f.aircraftModel), f.file]
     .join(' ').toLowerCase().includes(q));
   rows.sort((a, b) => {
