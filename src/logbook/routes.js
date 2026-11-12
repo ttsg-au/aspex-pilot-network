@@ -116,14 +116,20 @@ router.post('/logbook/api/profile', (req, res) => {
 });
 router.get('/logbook/api/settings', (req, res) => {
   const u = req.lb;
-  res.json({ name: u.name, email: u.email, role: u.role, dji: !!(u.djiApiKey || '').trim(), djiHint: u.djiApiKey ? '…' + u.djiApiKey.slice(-4) : '' });
+  res.json({ name: u.name, email: u.email, role: u.role, dji: !!(u.djiApiKey || '').trim(), djiHint: u.djiApiKey ? '…' + u.djiApiKey.slice(-4) : '',
+    skydio: !!(u.skydioToken || '').trim(), skydioHint: u.skydioToken ? '…' + u.skydioToken.slice(-4) : '', skydioSyncedAt: u.skydioSyncedAt || '', skydioLast: u.skydioLast || null });
 });
 router.post('/logbook/api/settings', (req, res) => {
   const b = req.body || {}, ch = {};
   if (typeof b.djiApiKey === 'string') ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);
+  if (typeof b.skydioToken === 'string') ch.skydioToken = b.skydioToken.trim().slice(0, 200);
   if (b.newUploadKey) ch.uploadKey = require('crypto').randomBytes(18).toString('base64url');
   db.update('lbUsers', req.lb.id, ch);
   res.json({ ok: true });
+});
+router.post('/logbook/api/skydio/sync', async (req, res) => {
+  try { res.json(await require('./skydio').sync(db.get('lbUsers', req.lb.id))); }
+  catch (e) { res.status(e.status === 401 || e.status === 403 ? 400 : 502).type('text').send(String(e.message || e)); }
 });
 router.get('/logbook/import-flights.cmd', (req, res) => {
   res.type('application/octet-stream').attachment('Import Flights.cmd').send(importCmd(`${req.protocol}://${req.get('host')}`, req.lb.uploadKey));   // the address you downloaded it from

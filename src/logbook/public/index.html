@@ -237,9 +237,11 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   <p class="muted" style="margin-top:-6px"><a href="import-flights.cmd">Download Import Flights</a> (once per PC; save it to the desktop). It contains this logbook's upload key, so keep it to your own PCs.</p>
   <p><b>Or drop flight record files here</b> (DJIFlightRecord_….txt), from any computer:</p>
   <div class="drop" id="impDrop" style="border:2px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--muted);cursor:pointer">Drop files or click to choose<input type="file" id="impFiles" multiple accept=".txt" hidden></div>
+  <p><b>Skydio:</b> flights come straight from Skydio Cloud. <button class="btn sm" id="skySync">Sync Skydio flights</button> <span class="muted" id="skyHint"></span></p>
   <pre id="impLog" style="max-height:260px"></pre>
   <details id="impMore"><summary>Settings and moving data across</summary>
     <p><b>DJI developer key</b> (unlocks GPS tracks and battery data): <input id="impKey" style="width:280px" placeholder="paste the Open API app key"> <button class="btn sm" id="impKeySave">Save</button> <span class="muted" id="impKeyHint"></span></p>
+    <p><b>Skydio Cloud token</b> (cloud.skydio.com → Settings → API Tokens, read access to Flights): <input id="skyKey" type="password" style="width:280px" placeholder="paste the token secret"> <button class="btn sm" id="skyKeySave">Save</button> <span class="muted" id="skyKeyHint"></span></p>
     <p><b>Move the old PC logbook here:</b> choose <i>Logbook export for website.json.gz</i> from Documents\FlightLogs. <input type="file" id="impMigrate" accept=".gz,.json"></p>
     <p><button class="btn sm ghost" id="impNewKey">Make a new upload key</button> <span class="muted">Stops old copies of Import Flights from working; download it again afterwards.</span></p>
   </details>

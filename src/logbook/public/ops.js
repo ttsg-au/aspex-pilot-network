@@ -476,7 +476,28 @@ async function impRefresh() {
   $('#impLog').textContent = j.uploads.length ? 'Recent imports:\n' + j.uploads.slice(0, 25).map(u => `  ${ago(u.at).padEnd(11)} ${u.file}  ${u.status}${u.track ? ' · ' + u.track : ''}  (${u.via})`).join('\n') + '\n' : '';
   const s = await (await fetch('api/settings')).json();
   $('#impKeyHint').textContent = s.dji ? `key saved (ends ${s.djiHint})` : 'not set';
+  $('#skyKeyHint').textContent = s.skydio ? `token saved (ends ${s.skydioHint})` : 'not set';
+  $('#skySync').disabled = !s.skydio;
+  $('#skyHint').textContent = !s.skydio ? 'Add your Skydio Cloud token under Settings below first.'
+    : s.skydioSyncedAt ? `Last synced ${ago(s.skydioSyncedAt)}${s.skydioLast ? `: ${s.skydioLast.found} flights in Skydio Cloud, ${s.skydioLast.added} new` : ''}.` : 'Not synced yet.';
 }
+$('#skyKeySave').onclick = async () => {
+  const v = $('#skyKey').value.trim(); if (!v) return;
+  await fetch('api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skydioToken: v }) });
+  $('#skyKey').value = ''; toast('Skydio token saved'); impRefresh();
+};
+$('#skySync').onclick = async () => {
+  $('#skySync').disabled = true; $('#skySync').textContent = 'Syncing…';
+  impWrite('Fetching flights from Skydio Cloud…');
+  try {
+    const r = await fetch('api/skydio/sync', { method: 'POST' });
+    if (!r.ok) throw new Error(await r.text());
+    const o = await r.json();
+    impWrite(`Skydio Cloud: ${o.found} flights found, ${o.added} new, ${o.updated} already in the logbook${o.skipped ? `, ${o.skipped} skipped (no take-off time)` : ''}.`);
+    await load();
+  } catch (e) { impWrite('Skydio sync failed: ' + e.message); }
+  $('#skySync').textContent = 'Sync Skydio flights'; impRefresh();
+};
 $('#importBtn').onclick = () => { $('#impModal').hidden = false; impRefresh(); };
 $('#impClose').onclick = () => { $('#impModal').hidden = true; };
 async function impUpload(files) {
