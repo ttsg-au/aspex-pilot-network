@@ -154,6 +154,61 @@ $('#newJob').onclick = async () => {
   await saveOps({ jobs: { [id]: { name: '', status: 'Planned', opType: 'VLOS', start: new Date().toISOString().slice(0, 10) } } }, 'Job created');
   curJob = id; renderJobs(); $('#jobEdit [data-f=name]')?.focus();
 };
+// Create jobs for past flights from the sites they were flown at: one job per visit
+// (flying days at the same site less than a week apart count as one visit). Shown for checking before anything is created.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function proposeJobsFromSites() {
+  const bySite = {};
+  for (const f of all) if (f.isFlight && !jobOf(f) && siteOfFlight[f.sha256] && dayOf(f)) (bySite[siteOfFlight[f.sha256]] ||= []).push(f);
+  const out = [];
+  for (const [siteId, fl] of Object.entries(bySite)) {
+    fl.sort((a, b) => a.startLocal.localeCompare(b.startLocal));
+    let cur = null;
+    for (const f of fl) {
+      const d = dayOf(f);
+      if (cur && (Date.parse(d) - Date.parse(cur.end)) / 864e5 < 7) { cur.end = d; cur.flights.push(f); continue; }
+      cur = { siteId, start: d, end: d, flights: [f] }; out.push(cur);
+    }
+  }
+  for (const p of out) {
+    p.mins = p.flights.reduce((s, f) => s + (f.durationMin || 0), 0);
+    p.days = new Set(p.flights.map(dayOf)).size;
+    const [y, m] = p.start.split('-');
+    p.name = `${siteName(p.siteId)} – ${MONTHS[Number(m) - 1]} ${y}`;
+  }
+  return out.sort((a, b) => b.start.localeCompare(a.start));
+}
+$('#jobsFromSites').onclick = () => {
+  curJob = null; renderJobList();
+  const props = proposeJobsFromSites();
+  const noSite = all.filter(f => f.isFlight && !jobOf(f) && !siteOfFlight[f.sha256]).length;
+  const el = $('#jobEdit');
+  el.innerHTML = `<h2>Create jobs from sites</h2>
+    <p class="muted">Flights that are on a site but not in a job, grouped into one job per visit (flying days at the same site less than a week apart count as one visit). Untick any you don't want, then create. You can rename jobs and add the client afterwards.</p>
+    ${props.length ? `<table><tr><th></th><th>Job name</th><th>Dates</th><th class="n">Days</th><th class="n">Flights</th><th class="n">Hours</th></tr>
+    ${props.map((p, i) => `<tr><td><input type="checkbox" data-p="${i}" checked></td><td><input data-name="${i}" value="${esc(p.name)}" style="width:100%;font:inherit;padding:3px"></td>
+      <td>${dateOnly(p.start)}${p.end !== p.start ? ' – ' + dateOnly(p.end) : ''}</td><td class="n">${p.days}</td><td class="n">${p.flights.length}</td><td class="n">${hrs(p.mins)}</td></tr>`).join('')}</table>
+    <p><button class="btn" id="jfsGo">Create ticked jobs</button> <button class="btn ghost" id="jfsCancel">Cancel</button></p>`
+    : '<p>Nothing to do: every flight on a site is already in a job.</p>'}
+    ${noSite ? `<p class="muted">${noSite} flight${noSite === 1 ? '' : 's'} with no site (for example test flights at home) ${noSite === 1 ? 'is' : 'are'} left as they are. Add a site in the Sites tab if any of them were jobs.</p>` : ''}`;
+  if (!props.length) return;
+  $('#jfsCancel').onclick = () => renderJobEdit();
+  $('#jfsGo').onclick = async () => {
+    const jobs = {}, flightJob = {};
+    el.querySelectorAll('[data-p]').forEach(cb => {
+      if (!cb.checked) return;
+      const p = props[cb.dataset.p], name = el.querySelector(`[data-name="${cb.dataset.p}"]`).value.trim() || p.name;
+      const id = newId(name);
+      jobs[id] = { name, siteId: p.siteId, start: p.start, end: p.end, status: 'Flown', opType: 'VLOS' };
+      for (const f of p.flights) flightJob[f.sha256] = id;
+    });
+    const n = Object.keys(jobs).length;
+    if (!n) return toast('Nothing ticked');
+    $('#jfsGo').disabled = true;
+    if (await saveOps({ jobs, flightJob }, `Created ${n} job${n === 1 ? '' : 's'}, ${Object.keys(flightJob).length} flights added`)) { renderJobs(); renderFlights(); }
+    else $('#jfsGo').disabled = false;
+  };
+};
 $('#newClient').onclick = async () => {
   const name = prompt('Client name (e.g. SiteMark)'); if (!name?.trim()) return;
   await saveOps({ clients: { [newId(name)]: { name: name.trim() } } }, 'Client added'); renderJobs();
