@@ -554,6 +554,35 @@ async function ebeeUpload(list) {
     } catch (e) { impWrite(`eBee ${base}  FAILED: ${e.message}`); }
   }
 }
+// Drone Logbook CSV exports: preview, then import on request.
+let dlbTexts = null;
+$('#dlbFiles').onchange = async (e) => {
+  const out = $('#dlbOut'); out.innerHTML = '<p class="muted">Reading…</p>';
+  try {
+    dlbTexts = await Promise.all([...e.target.files].map(f => f.text()));
+    const r = await fetch('api/dlb/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: dlbTexts }) });
+    if (!r.ok) { out.innerHTML = `<p style="color:#a12a1e">${esc(await r.text())}</p>`; return; }
+    const p = await r.json();
+    const miss = ['drones', 'batteries'].filter(k => !p.have.includes(k));
+    out.innerHTML = `
+      <p style="margin:8px 0 4px"><b>${p.counts.new}</b> new flights to import · <b>${p.counts.skip}</b> already in this logbook (skipped) · <b>${p.counts.check}</b> need checking (not imported)</p>
+      <p class="muted" style="margin:0 0 6px">${p.offsetMin ? `Drone Logbook's clock is ${Math.abs(p.offsetMin)} min ${p.offsetMin > 0 ? 'ahead of' : 'behind'} your flight files (measured from ${p.matchedForClock} flights in both); imported times are corrected.` : p.matchedForClock ? 'Drone Logbook times match your flight files.' : 'No flights in both to compare clocks, so times are used as they are.'}
+      ${miss.length ? ` <b>Missing ${miss.join(' and ')} export</b> – aircraft/battery names will be codes.` : ''}${p.have.includes('locations') ? '' : ' No Locations export, so old flights will have no site.'}</p>
+      <table><tr><th>Aircraft</th><th class="n">New</th><th class="n">Already here</th><th class="n">Check</th></tr>
+      ${Object.entries(p.byAircraft).map(([a, c]) => `<tr><td>${esc(a)}</td><td class="n">${c.new}</td><td class="n">${c.skip}</td><td class="n">${c.check}</td></tr>`).join('')}</table>
+      ${p.rows.some(x => x.status === 'check') ? `<p class="muted">Not imported: ${p.rows.filter(x => x.status === 'check').map(x => `${esc(x.aircraft)} ${esc(x.when)} (${esc(x.why)})`).join('; ')}</p>` : ''}
+      <details><summary>List every flight</summary><table>${p.rows.map(x => `<tr><td>${esc(x.when)}</td><td>${esc(x.aircraft)}</td><td class="n">${x.minutes} min</td><td>${esc(x.battery)}</td><td>${x.status === 'new' ? '<b>new</b>' : esc(x.why)}</td></tr>`).join('')}</table></details>
+      ${p.counts.new ? `<p><button class="btn" id="dlbGo">Import ${p.counts.new} new flight${p.counts.new > 1 ? 's' : ''}</button></p>` : '<p>Nothing new to import.</p>'}`;
+    const go = $('#dlbGo');
+    if (go) go.onclick = async () => {
+      go.disabled = true; go.textContent = 'Importing…';
+      const r2 = await fetch('api/dlb/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: dlbTexts }) });
+      const d = r2.ok ? await r2.json() : null;
+      out.innerHTML = d ? `<p><b>Imported ${d.imported} flight${d.imported === 1 ? '' : 's'}</b> from Drone Logbook.</p>` : `<p style="color:#a12a1e">${esc(await r2.text())}</p>`;
+      e.target.value = ''; load();
+    };
+  } catch (err) { out.innerHTML = `<p style="color:#a12a1e">${esc(err.message)}</p>`; }
+};
 $('#impDrop').onclick = () => $('#impFiles').click();
 $('#impFiles').onchange = e => impUpload(e.target.files);
 $('#impDrop').ondragover = e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--accent)'; };

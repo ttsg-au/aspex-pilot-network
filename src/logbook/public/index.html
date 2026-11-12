@@ -151,7 +151,7 @@
   .btn.danger { color: #a1261b; border-color: #e3b3ad; background: #fff; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 3000; }
   .modal[hidden] { display: none; }
-  .modal .box { background: #fff; border-radius: 10px; width: min(760px, 94vw); padding: 18px 20px; }
+  .modal .box { background: #fff; border-radius: 10px; width: min(760px, 94vw); padding: 18px 20px; max-height: 92vh; overflow: auto; }
   .modal h3 { margin: 0 0 6px; } .modal pre { background: #17211d; color: #d7e6df; height: 320px; overflow: auto; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
   .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: #eef0ec; font-size: 11.5px; color: var(--muted); }
   nav.subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
@@ -244,6 +244,11 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   <details id="impMore"><summary>Settings and moving data across</summary>
     <p><b>DJI developer key</b> (unlocks GPS tracks and battery data): <input id="impKey" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" style="width:280px" placeholder="paste the Open API app key"> <button class="btn sm" id="impKeySave">Save</button> <span class="muted" id="impKeyHint"></span></p>
     <p><b>Skydio Cloud token</b> (cloud.skydio.com → Settings → API Tokens, read access to Flights): <input id="skyKey" type="text" autocomplete="off" data-lpignore="true" data-1p-ignore spellcheck="false" style="width:280px;-webkit-text-security:disc" placeholder="paste the token secret"> <button class="btn sm" id="skyKeySave">Save</button> <span class="muted" id="skyKeyHint"></span></p>
+    <div style="border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:8px 0">
+      <p style="margin:0 0 6px"><b>Move flights from Drone Logbook:</b> in Drone Logbook, Report / Import → Import / Export (CSV), export <b>Flights</b>, <b>Drones</b> and <b>Battery</b> (and <b>Locations</b> if you can), then choose all those files here together. You'll see a preview first; nothing is saved until you click Import. Flights already in this logbook are skipped.</p>
+      <input type="file" id="dlbFiles" multiple accept=".csv">
+      <div id="dlbOut"></div>
+    </div>
     <p><b>Move the old PC logbook here:</b> choose <i>Logbook export for website.json.gz</i> from Documents\FlightLogs. <input type="file" id="impMigrate" accept=".gz,.json"></p>
     <p><button class="btn sm ghost" id="impNewKey">Make a new upload key</button> <span class="muted">Stops old copies of Import Flights from working; download it again afterwards.</span></p>
   </details>

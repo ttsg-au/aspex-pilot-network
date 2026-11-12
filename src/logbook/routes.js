@@ -144,6 +144,13 @@ router.post('/logbook/api/settings', (req, res) => {
   db.update('lbUsers', req.lb.id, ch);
   res.json({ ok: true });
 });
+// Moving history across from Drone Logbook CSV exports: preview first, then import.
+router.post('/logbook/api/dlb/preview', express.json({ limit: '20mb' }), (req, res) => {
+  try { const p = require('./dlb').plan(req.lb, req.body.files); res.json({ ...p, entries: undefined }); } catch (e) { fail(res, e, 400); }
+});
+router.post('/logbook/api/dlb/import', express.json({ limit: '20mb' }), (req, res) => {
+  try { res.json(require('./dlb').commit(req.lb, req.body.files)); } catch (e) { fail(res, e, 400); }
+});
 router.post('/logbook/api/skydio/sync', async (req, res) => {
   try { res.json(await require('./skydio').sync(db.get('lbUsers', req.lb.id))); }
   catch (e) { res.status(e.status === 401 || e.status === 403 ? 400 : 502).type('text').send(String(e.message || e)); }

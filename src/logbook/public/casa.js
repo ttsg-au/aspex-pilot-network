@@ -217,7 +217,7 @@ function applyRepView() {
   });
 }
 const inRange = (f, from, to) => { const d = f.startLocal.slice(0, 10); return (!from || d >= from) && (!to || d <= to); };
-const where = f => { const sid = siteOfFlight[f.sha256]; return sid ? siteName(sid) : f.takeoffLat != null ? `${num(f.takeoffLat, 4)}, ${num(f.takeoffLon, 4)}` : '–'; };
+const where = f => { const sid = siteOfFlight[f.sha256]; return sid ? siteName(sid) : f.dlbLocation ? f.dlbLocation : f.takeoffLat != null ? `${num(f.takeoffLat, 4)}, ${num(f.takeoffLon, 4)}` : '–'; };
 const acDesc = sn => { const a = inv.aircraft[sn] || {}; return [a.code, model(a.model), a.registration ? 'rego ' + a.registration : ''].filter(Boolean).join(' · '); };
 function reportData(from, to) {
   const fl = all.filter(f => f.isFlight && inRange(f, from, to)).sort((a, b) => a.startLocal.localeCompare(b.startLocal));
