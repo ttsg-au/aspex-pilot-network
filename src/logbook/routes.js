@@ -32,7 +32,7 @@ router.use(require('./network').router);                          // Aspex jobs 
 router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
   ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace(/\.(cjs|js)"><\/script>/g, `.$1?v=${VERSION}"></script>`))
   : res.redirect('/logbook/'));
-router.get(/^\/logbook\/(geo\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
 
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)
@@ -99,6 +99,14 @@ router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-
     if (r.status !== 'already had') store.noteUpload(req.lb.id, line);
     res.json({ ...line, summary: summary(r) });
   } catch (e) { fail(res, e, 500); }
+});
+router.post('/logbook/api/upload-ebee', express.json({ limit: '10mb' }), async (req, res) => {   // one eBee flight, read in the browser
+  try {
+    const r = await require('./ebee').processFlight(req.lb, req.body || {});
+    const line = { file: r.file, status: r.status, track: r.flight.track, via: 'browser' };
+    if (r.status !== 'already had') store.noteUpload(req.lb.id, line);
+    res.json({ ...line, summary: summary(r) });
+  } catch (e) { fail(res, e, e.message && e.message.startsWith('That isn') ? 400 : 500); }
 });
 // The logbook owner's own pilot details (remote pilot log header).
 const PROFILE = { fullName: 120, arn: 20, replNo: 40, replClass: 200, replExpiry: 10, insuranceExpiry: 10, otherQuals: 1000, defaultOpType: 5, remindersOff: 1 };

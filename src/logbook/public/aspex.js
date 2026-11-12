@@ -148,7 +148,7 @@ async function renderJobNetwork(key) {
     if (site?.boundary) for (const poly of site.boundary) L.polygon(poly.map(r => r.map(p => [p[1], p[0]])), { color: '#fff', weight: 2, fillOpacity: 0.05 }).addTo(group);
     const colours = ['#ffb000', '#00c2ff', '#ff5d8f', '#7cff6b', '#c38bff'];
     net.pilots.forEach((p, i) => p.flights.filter(f => f.track === 'ok').forEach(async f => {
-      const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-track/${p.uid}/${encodeURIComponent(f.file.replace(/\.txt$/i, '') + '.txt')}`);
+      const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-track/${p.uid}/${encodeURIComponent(f.file)}`);
       if (!r.ok) return;
       const c = (await r.json()).features[0].geometry.coordinates.map(q => [q[1], q[0]]);
       L.polyline(c, { color: colours[i % colours.length], weight: 2.5 }).bindPopup(`${esc(p.name)}<br>${dateOnly(f.startLocal)} ${timeOnly(f.startLocal)}–${timeOnly(f.endLocal)}<br>${num(f.durationMin, 1)} min · max ${num(f.maxHeightM, 0)} m${f.defect ? '<br>Defect: ' + esc(f.defect) : ''}`).addTo(group);

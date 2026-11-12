@@ -503,9 +503,12 @@ $('#skySync').onclick = async () => {
 $('#importBtn').onclick = () => { $('#impModal').hidden = false; impRefresh(); };
 $('#impClose').onclick = () => { $('#impModal').hidden = true; };
 async function impUpload(files) {
+  const bb3 = [...files].filter(f => /\.bb3$/i.test(f.name));
   files = [...files].filter(f => /\.txt$/i.test(f.name));
-  if (!files.length) return toast('Choose DJIFlightRecord_….txt files');
+  if (!files.length && !bb3.length) return toast('Choose DJIFlightRecord_….txt files, or an eBee flight’s .bb3 files');
   $('#impLog').textContent = '';
+  if (bb3.length) await ebeeUpload(bb3);
+  if (!files.length) { impWrite('Done.'); return load(); }
   let i = 0;
   for (const f of files) {
     i++;
@@ -516,6 +519,33 @@ async function impUpload(files) {
     } catch (e) { impWrite(`[${i}/${files.length}] ${f.name}  FAILED: ${e.message}`); }
   }
   impWrite('Done.'); await load();
+}
+// eBee: join each flight's .bb3 parts in order, read the GPS fixes here, send ~1 per second.
+async function ebeeUpload(list) {
+  const groups = {};
+  for (const f of list) {
+    const n = BB3.nameInfo(f.name);
+    if (!n) { impWrite(`${f.name}  not an eBee log part (expected …_0072_part001.bb3)`); continue; }
+    (groups[n.base] ||= []).push([n.part, f]);
+  }
+  for (const [base, parts] of Object.entries(groups)) {
+    parts.sort((a, b) => a[0] - b[0]);
+    const nums = parts.map(p => p[0]), missing = [];
+    for (let k = 1; k <= Math.max(...nums); k++) if (!nums.includes(k)) missing.push(k);
+    if (missing.length) { impWrite(`eBee ${base}: missing part ${missing.join(', ')}. Add all the parts of the flight and try again.`); continue; }
+    try {
+      impWrite(`eBee ${base}: reading ${parts.length} part${parts.length > 1 ? 's' : ''}…`);
+      const bufs = await Promise.all(parts.map(p => p[1].arrayBuffer()));
+      const all = new Uint8Array(bufs.reduce((n, b) => n + b.byteLength, 0));
+      let o = 0; for (const b of bufs) { all.set(new Uint8Array(b), o); o += b.byteLength; }
+      const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', all))].map(x => x.toString(16).padStart(2, '0')).join('');
+      const fixes = BB3.thin(BB3.fixes(all)).map(f => [f[0], +f[1].toFixed(7), +f[2].toFixed(7), +f[3].toFixed(2), +f[4].toFixed(2)]);
+      if (!fixes.length) { impWrite(`eBee ${base}: no GPS positions found in these files.`); continue; }
+      const r = await fetch('api/upload-ebee', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: base, sha256: sha, bytes: all.length, parts: parts.length, fixes }) });
+      impWrite(`eBee ${base}  ${r.ok ? (await r.json()).summary : await r.text()}`);
+    } catch (e) { impWrite(`eBee ${base}  FAILED: ${e.message}`); }
+  }
 }
 $('#impDrop').onclick = () => $('#impFiles').click();
 $('#impFiles').onchange = e => impUpload(e.target.files);
