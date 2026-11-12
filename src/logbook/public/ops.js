@@ -141,8 +141,10 @@ function renderJobEdit() {
           <td class="n"><button class="btn sm" data-add="${esc(s.key)}">Add to job</button></td></tr>`).join('') || '<tr><td class="muted">Nothing unassigned.</td></tr>';
       })()}</table>
     </div>
+    <div class="sub2"><h4>Map</h4><div id="jobMap" style="height:380px;border-radius:8px;overflow:hidden"></div><p class="muted" id="jobMapNote" style="margin-top:6px"></p></div>
     <div class="sub2" id="jobNet"></div>`;
   bindFields($('#jobEdit'), 'jobs', curJob);
+  drawJobMap(j, st.fl);
   bindSafety($('#jobEdit'), curJob);
   renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
@@ -159,6 +161,41 @@ function renderJobEdit() {
     const patch = {}; for (const f of bySess(b.dataset.rm)) if (jobOf(f) === curJob) patch[f.sha256] = null;
     await saveOps({ flightJob: patch }, 'Removed'); renderJobs(); renderFlights();
   });
+}
+// Satellite map for a job: the site boundary (KML) if there is one, the job's take-off points,
+// otherwise centred on the site, or on the place in the job's name.
+let jobMap = null;
+async function drawJobMap(j, fl) {
+  if (jobMap) { jobMap.remove(); jobMap = null; }
+  if (!$('#jobMap')) return;
+  const jobKey = curJob;
+  jobMap = L.map('jobMap', { scrollWheelZoom: false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri' }).addTo(jobMap);
+  const s = ops.sites[j.siteId], note = t => { if ($('#jobMapNote')) $('#jobMapNote').textContent = t; };
+  const layers = []; let bounds = null;
+  const approx = s && s.boundary && !s.areaHa;
+  if (s && s.boundary) {
+    const b = L.polygon(s.boundary.map(p => p.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffd400', weight: 3, fillOpacity: .05, dashArray: approx ? '6 6' : null }).bindTooltip(esc(s.name || 'Site'));
+    layers.push(b); bounds = b.getBounds();
+  }
+  const pts = fl.filter(f => f.takeoffLat != null && (f.takeoffLat || f.takeoffLon));
+  for (const f of pts) layers.push(L.circleMarker([f.takeoffLat, f.takeoffLon], { radius: 4, color: '#0f6e5a', weight: 1, fillColor: '#3fd1a8', fillOpacity: .9 }).bindTooltip(`${f.flightNo || ''} · ${f.startLocal}`));
+  const g = L.featureGroup(layers).addTo(jobMap);
+  if (bounds) { jobMap.fitBounds(bounds.pad(0.15)); note(approx ? 'Dashed outline: approximate site area from take-off points. Load the farm KML in the Sites tab for the real boundary.' : `Site boundary from ${s.boundaryFile || 'KML'}${pts.length ? ', with take-off points' : ''}.`); return; }
+  if (pts.length) { jobMap.fitBounds(g.getBounds().pad(0.3), { maxZoom: 16 }); note('No site boundary yet: showing take-off points. Load the KML in the Sites tab to add the boundary.'); return; }
+  if (s && s.centroid) { jobMap.setView([s.centroid[0], s.centroid[1]], 14); note('No site boundary yet. Load the KML in the Sites tab to add it.'); return; }
+  jobMap.setView([-28, 145], 4);
+  // nothing to go on: look up the site or job name on the map
+  const q = (s && s.name) || j.name || '';
+  if (!q.trim()) { note('Choose a site, or load a KML in the Sites tab, to show where this job is.'); return; }
+  note('Finding the location from the name…');
+  try {
+    const name = q.replace(/\s+[–-]\s+.*$/, '');
+    const r = await (await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=au&q=${encodeURIComponent(name)}`)).json();
+    if (curJob !== jobKey || !jobMap) return;
+    if (r[0]) { jobMap.setView([Number(r[0].lat), Number(r[0].lon)], 13); note(`Located from the name "${name}" (approximate). Load the KML in the Sites tab for the boundary.`); }
+    else note(`Couldn't find "${name}" on the map. Choose a site or load a KML in the Sites tab.`);
+  } catch { note('Choose a site, or load a KML in the Sites tab, to show where this job is.'); }
 }
 $('#newJob').onclick = async () => {
   const id = newId('job');
