@@ -19,6 +19,13 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 
 // A file is "done" once it has a result that re-uploading can't improve.
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
+// The reader names aircraft it knows ("Mavic3Enterprise"); newer ones it doesn't know come back as
+// { Unknown: <type number> }. Show those as "DJI aircraft (type N)" rather than "[object Object]".
+function modelName(pt) {
+  if (typeof pt === 'string' && pt) return pt;
+  const n = pt && typeof pt === 'object' ? Object.values(pt)[0] : null;
+  return n != null && n !== '' ? `DJI aircraft (type ${n})` : 'DJI aircraft';
+}
 const isDone = (f) => f && FINAL.has(f.track);
 // Logged before charge cycles were read: a browser re-import can fill the count in.
 const CYCLE_CHECK = 3;   // bump to let browser re-imports read the cycle count again
@@ -62,7 +69,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
       takeoffLat: round(d.latitude, 6), takeoffLon: round(d.longitude, 6),
       distanceKm: round(d.totalDistance, 2), maxHeightM: round(d.maxHeight, 1),
       maxHSpeedMs: round(d.maxHorizontalSpeed, 1), photos: d.captureNum, videoSec: d.videoTime,
-      aircraftModel: d.productType, aircraftName: d.aircraftName, aircraftSn: d.aircraftSn,
+      aircraftModel: modelName(d.productType), aircraftName: d.aircraftName, aircraftSn: d.aircraftSn,
       rcSn: d.rcSn, cameraSn: d.cameraSn, batterySn: d.batterySn,
       app: `${d.appPlatform} ${d.appVersion}`,
       isFlight, track: 'not done', trackPoints: 0,
