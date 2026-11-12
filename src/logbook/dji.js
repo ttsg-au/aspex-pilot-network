@@ -21,7 +21,8 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
 const isDone = (f) => f && FINAL.has(f.track);
 // Logged before charge cycles were read: a browser re-import can fill the count in.
-const needsCycles = (f) => f && f.track === 'ok' && f.batteryCycles == null && !f.batteryCyclesChecked;
+const CYCLE_CHECK = 2;   // bump to let browser re-imports read the cycle count again
+const needsCycles = (f) => f && f.track === 'ok' && (f.batteryCycles == null ? !f.batteryCyclesChecked : f.batteryCyclesVer !== CYCLE_CHECK);
 
 async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const uid = user.id;
@@ -42,7 +43,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
       if (!keys && log.version >= 13) return { file, sha256, status: 'already had', flight: existing, note: 'add the DJI key in Settings to read its battery cycles' };
       const cyc = batteryCycles(log, keys);
       note = cyc.note;
-      const flight = db.update('lbFlights', existing.id, { batteryCycles: cyc.cycles ?? null, batteryCyclesChecked: !/^records unreadable/.test(note), batteryCyclesNote: note });
+      const flight = db.update('lbFlights', existing.id, { batteryCycles: cyc.cycles ?? null, batteryCyclesChecked: !/^records unreadable/.test(note), batteryCyclesNote: note, batteryCyclesVer: CYCLE_CHECK });
       return { file, sha256, status: 'cycles checked', flight };
     } catch (e) { return { file, sha256, status: 'already had', flight: existing, note: 'cycle check failed: ' + String(e?.message || e) }; }
   }
@@ -84,7 +85,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
           Object.assign(entry, flightStats(frames, entry));
           const cyc = batteryCycles(log, keychains);
           if (cyc.cycles != null) entry.batteryCycles = cyc.cycles;
-          entry.batteryCyclesChecked = true; entry.batteryCyclesNote = cyc.note;
+          entry.batteryCyclesChecked = true; entry.batteryCyclesNote = cyc.note; entry.batteryCyclesVer = CYCLE_CHECK;
           const pts = trackPoints(frames, entry);
           if (pts.length >= 2) {
             const geo = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature',
@@ -123,7 +124,8 @@ function batteryCycles(log, keychains) {
   if (staticRec && staticRec.loop_times) {
     const v = staticRec.loop_times;                      // newer aircraft store it shifted one byte
     const c = v >= 256 && v % 256 === 0 ? v / 256 : v;
-    if (c < 3000) return { cycles: c, note: 'SmartBatteryStatic loop_times ' + v };
+    const raw = `raw loop_times ${v}, design ${staticRec.designed_capacity} mAh, full ${staticRec.full_voltage} mV, life ${staticRec.battery_life}, type ${staticRec.battery_type}, version ${(staticRec.version_number || []).join('.')}`;
+    if (c < 3000) return { cycles: c, note: raw };
   }
   if (center && center.numberOfDischarges) return { cycles: center.numberOfDischarges, note: 'CenterBattery numberOfDischarges' };
   const kinds = Object.entries(seen).filter(([k]) => /Battery|SBG/.test(k)).map(([k, n]) => `${k}×${n}`).join(', ') || 'no battery records';

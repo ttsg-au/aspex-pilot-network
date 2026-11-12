@@ -187,7 +187,7 @@ router.post('/logbook/api/migrate', raw('100mb'), async (req, res) => {
 function summary(r) {
   const f = r.flight;
   if (r.status === 'already had') return 'already in the logbook' + (r.note ? ` (${r.note})` : '');
-  if (r.status === 'cycles checked') return `already in the logbook; battery ${f.batteryCycles != null ? f.batteryCycles + ' charge cycles' : '- ' + (f.batteryCyclesNote || 'no cycle count')}`;
+  if (r.status === 'cycles checked') return `already in the logbook; battery ${f.batteryCycles != null ? f.batteryCycles + ' charge cycles' : '-'} (${f.batteryCyclesNote || 'no cycle count'})`;
   if (!f.isFlight) return f.track === 'error' ? 'could not read: ' + (f.error || '') : 'motor start, no take-off';
   const t = { ok: 'track ok', 'no key': 'no GPS track yet - add the DJI key in Settings', 'key error': 'DJI refused the key request' }[f.track] || f.track;
   return `${f.flightNo || ''} ${f.durationMin} min, ${t}`.trim();
