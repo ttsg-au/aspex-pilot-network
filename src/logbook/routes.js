@@ -90,6 +90,15 @@ router.get('/logbook/logbook.csv', (req, res) => {
 router.get('/logbook/api/import/status', (req, res) => {
   res.json({ dji: !!(req.lb.djiApiKey || '').trim(), uploads: store.uploads(req.lb.id).slice(0, 60) });
 });
+// Files the browser needn't send: already logged, and either not a battery's latest flight or already
+// cycle-checked. So dropping a whole folder only uploads what's new plus each battery's latest flight.
+router.get('/logbook/api/import/skip', (req, res) => {
+  const fl = store.flights(req.lb.id).filter(f => f.file);
+  const latest = {};
+  for (const f of fl) if (f.batterySn && f.track === 'ok' && (!latest[f.batterySn] || (f.startUtc || '') > (latest[f.batterySn].startUtc || ''))) latest[f.batterySn] = f;
+  const wanted = new Set(Object.values(latest).filter(dji.needsCycles).map(f => f.file));
+  res.json({ skip: fl.filter(f => dji.isDone(f) && !wanted.has(f.file)).map(f => f.file) });
+});
 router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-and-drop .txt files in the browser
   try {
     const name = path.basename(String(req.query.name || ''));

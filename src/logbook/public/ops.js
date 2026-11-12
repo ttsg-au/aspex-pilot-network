@@ -509,6 +509,13 @@ async function impUpload(files) {
   $('#impLog').textContent = '';
   if (bb3.length) await ebeeUpload(bb3);
   if (!files.length) { impWrite('Done.'); return load(); }
+  try {                                  // don't upload flights the logbook already has in full
+    const skip = new Set((await (await fetch('api/import/skip')).json()).skip || []);
+    const before = files.length;
+    files = files.filter(f => !skip.has(f.name));
+    if (before > files.length) impWrite(`${before - files.length} file${before - files.length > 1 ? 's' : ''} already in the logbook - skipped.`);
+    if (!files.length) { impWrite('Done.'); return load(); }
+  } catch {}
   let i = 0;
   for (const f of files) {
     i++;

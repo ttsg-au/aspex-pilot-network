@@ -221,4 +221,4 @@ function csv(rows) {
   return '﻿' + lines.join('\r\n');
 }
 
-module.exports = { processFile, isDone, kml, csv };
+module.exports = { processFile, isDone, needsCycles, kml, csv };
