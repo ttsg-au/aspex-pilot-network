@@ -34,7 +34,6 @@ const waRegion = (lat) => (lat > -26.0 ? 'nwa' : 'swa'); // Carnarvon (-24.9) is
 const DEFAULTS = {
   key: 'screening',
   enabled: true,
-  reocAnywhere: true, // pilots with their own ReOC are accepted from any region (Part B, own-ReOC category)
   regions: ['nqld', 'cqld', 'swqld', 'nwa', 'swa', 'SA', 'TAS'],
   subject: 'Aspex Pilot Network – your registration',
   body: `Hi {first_name},
@@ -87,11 +86,6 @@ async function screen(pilotId, sendEmail) {
   if (!s.enabled || !p) return { outcome: 'off' };
   const r = await regionOf(p);
   if (r.region) db.update('pilots', p.id, { region: regionLabel(r.region) });
-  const ownReoc = db.where('qualifications', q => q.pilotId === p.id && q.type === 'reoc').length > 0;
-  if (s.reocAnywhere && ownReoc && !(r.region && s.regions.includes(r.region))) {
-    note(p.id, `Automatic check: holds their own ReOC, so accepted from ${r.region ? regionLabel(r.region) : 'any region'} as an own-ReOC operator (Part B agreement plus the sub-2 kg agreement). Check their ReOC, RePL and insurance.`);
-    return { outcome: 'accepted', region: r.region, ownReoc: true };
-  }
   if (r.region && s.regions.includes(r.region)) return { outcome: 'accepted', region: r.region };
   if (r.unknown) { // in QLD or WA but the town couldn't be found: leave it for Kimberly to check
     note(p.id, `Automatic check: couldn't place "${p.homeBase}" on the map, so couldn't tell which part of ${r.state} it's in. Please check by hand.`);
@@ -108,6 +102,4 @@ async function screen(pilotId, sendEmail) {
   return { outcome: 'declined', emailed: true };
 }
 
-const hasOwnReoc = (pilotId) => db.where('qualifications', q => q.pilotId === pilotId && q.type === 'reoc').length > 0;
-
-module.exports = { hasOwnReoc, REGIONS, regionLabel, getSettings, saveSettings, screen, qldRegion, waRegion };
+module.exports = { REGIONS, regionLabel, getSettings, saveSettings, screen, qldRegion, waRegion };

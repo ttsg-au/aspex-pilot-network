@@ -15,8 +15,6 @@ router.get('/settings/regions', (req, res) => {
 <form method="post" action="/settings/regions" class="card">
 <label class="tick"><input type="checkbox" name="enabled" value="1" ${s.enabled ? 'checked' : ''}>
 <span><b>Automatically screen new registrations by location</b><br><span class="sub">Applies to new pilots from the website form or a pasted registration email. Pilots already in the system aren't changed.</span></span></label>
-<label class="tick"><input type="checkbox" name="reocAnywhere" value="1" ${s.reocAnywhere ? 'checked' : ''}>
-<span><b>Accept pilots with their own ReOC from anywhere</b><br><span class="sub">They fly under their own ReOC on the Part B agreement, so location doesn't decline them. They still need to sign the sub-2 kg agreement too.</span></span></label>
 <h2>Recruiting in</h2>
 <p class="sub">Tick the places you're looking for pilots. A new registration from anywhere else is marked "Not proceeding" and sent the email below. If they don't give a state in their home base, they're declined without an email. Queensland and WA registrations are placed on the map to tell which part of the state they're in; if the town can't be found, the pilot is left for you to check, with a note on their record.</p>
 <div class="regiongrid">${S.REGIONS.map(box).join('')}</div>
@@ -33,7 +31,6 @@ router.post('/settings/regions', (req, res) => {
   const valid = S.REGIONS.map(r => r.id);
   S.saveSettings({
     enabled: !!b.enabled,
-    reocAnywhere: !!b.reocAnywhere,
     regions: [].concat(b.regions || []).filter(r => valid.includes(r)),
     subject: String(b.subject || '').trim() || S.getSettings().subject,
     body: String(b.body || '').trim() || S.getSettings().body,

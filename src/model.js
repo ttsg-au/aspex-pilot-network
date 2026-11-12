@@ -21,7 +21,6 @@ const stageLabel = (id) => (STAGES.find(s => s.id === id) || { label: id }).labe
 
 const QUAL_TYPES = [
   { id: 'agreement', label: 'Contractor agreement (signed)', expires: false, detail: 'Version, e.g. v1.4' },
-  { id: 'agreement_b', label: 'Part B agreement – own ReOC (signed)', expires: false, detail: 'Version, e.g. v1.0' },
   { id: 'arn', label: 'ARN (Aviation Reference Number)', expires: false },
   { id: 'accreditation', label: 'RPA operator accreditation', expires: true },
   { id: 'repl', label: 'RePL (Remote Pilot Licence)', expires: false, detail: 'Ratings / category (e.g. multirotor up to 7 kg)' },
@@ -111,17 +110,7 @@ function readiness(p) {
     { label: 'Inducted into Aspex ops manual', ok: !!did('induction_opsmanual'), have: !!did('induction_opsmanual') },
     { label: 'Competency check in last 12 months', ok: recs.some(r => r.type === 'competency_check' && (r.date || '') >= yearAgo), have: !!did('competency_check') },
   ];
-  // Own-ReOC operators (Part B): fly under their own ReOC, ops manual and chief remote pilot.
-  const ownReoc = [
-    { label: 'Own ReOC (current, scope covers the drones)', ok: !!verified('reoc'), have: !!has('reoc') },
-    { label: 'RePL for each pilot (right category and weight)', ok: !!verified('repl'), have: !!has('repl') },
-    { label: 'ARN', ok: !!verified('arn'), have: !!has('arn') },
-    { label: 'Drone registration (CASA)', ok: !!verified('drone_reg'), have: !!has('drone_reg') },
-    { label: 'Aviation liability insurance ($20M) – certificate of currency', ok: !!verified('insurance'), have: !!has('insurance') },
-    { label: 'Sub-2 kg contractor agreement signed', ok: !!agreementOf(p), have: !!agreementOf(p) },
-    { label: 'Part B agreement (own ReOC) signed', ok: !!quals.find(q => q.type === 'agreement_b' && q.issuedOn), have: !!quals.find(q => q.type === 'agreement_b') },
-  ];
-  return { partA, reoc, ownReoc, ownReocReady: ownReoc.every(x => x.ok), partAReady: partA.every(x => x.ok), reocReady: reoc.every(x => x.ok) };
+  return { partA, reoc, partAReady: partA.every(x => x.ok), reocReady: reoc.every(x => x.ok) };
 }
 
 // Filters used on the pilot list and when choosing who to message.

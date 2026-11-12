@@ -191,8 +191,6 @@ ${ag ? '' : `<div class="flash bad"><b>No signed contractor agreement.</b> ${esc
 <div class="cols">
 <section class="card"><h2>Ready for client sites (Part A)</h2>${check(ready.partA)}
 ${ready.partAReady ? '<p class="okline">All done – ready for client sites.</p>' : `<p class="sub"><span class="pip ok"></span>verified <span class="pip part"></span>they've told us they have it – tick “Verified by me” once you've seen the certificate <span class="pip no"></span>missing</p>`}</section>
-${require('../screening').hasOwnReoc(p.id) || p.partB ? `<section class="card"><h2>Own-ReOC operator (Part B)</h2>${check(ready.ownReoc)}
-${ready.ownReocReady ? '<p class="okline">All done – can take ReOC operator jobs under their own ReOC.</p>' : '<p class="sub">For jobs flown under their own ReOC (for example drones over 2 kg). Add the Part B agreement under Credentials once signed.</p>'}</section>` : ''}
 <section class="card"><h2>ReOC track (flying under the Aspex ReOC)</h2>${check(ready.reoc)}
 <p class="sub">Flight hours logged: <b>${M.flightHours(p.id)}</b></p></section>
 </div>
