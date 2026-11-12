@@ -159,6 +159,34 @@ pub.post('/logbook/forgot', async (req, res) => {
 const admin = express.Router();
 const status = (u) => u.disabled ? '<span class="badge bad">Turned off</span>' : u.pwHash ? `<span class="badge good">Active</span>` : '<span class="badge warn">Invited</span>';
 
+// Pilots with a signed contractor agreement who haven't been given a logbook yet.
+function waitingPilots() {
+  const M = require('../model');
+  return db.all('pilots').filter(p => p.email && p.stage !== 'not_proceeding' && M.agreementOf(p)
+    && !users().some(u => u.pilotId === p.id || u.email === normEmail(p.email)))
+    .sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+}
+function waitingSection(req) {
+  const done = req.query.sent != null ? `<div class="flash${Number(req.query.failed) ? ' bad' : ''}"><b>${Number(req.query.sent)} invite${Number(req.query.sent) === 1 ? '' : 's'} sent.</b>${Number(req.query.failed) ? ` ${Number(req.query.failed)} couldn't be sent: they're still listed below, so try again or use their pilot page.` : ''}</div>` : '';
+  const list = waitingPilots();
+  if (!list.length) return done;
+  return `${done}<section class="card"><h2>Signed pilots without a logbook (${list.length})</h2>
+<p class="sub">These pilots have a signed contractor agreement but haven't been invited to the logbook. Untick anyone you want to leave out, then send. Each gets the invite email with the getting-started steps.</p>
+<form method="post" action="/logbook-accounts/invite-many">
+${list.map(p => `<label class="tick"><input type="checkbox" name="ids" value="${esc(p.id)}" checked><span><b>${esc(p.fullName || p.email)}</b> <span class="sub">${esc(p.email)}${p.region || p.state ? ' · ' + esc(p.region || p.state) : ''}</span></span></label>`).join('')}
+<button data-confirm="Email a logbook invite to the ticked pilots?">Send invites to ticked pilots</button></form></section>`;
+}
+admin.post('/logbook-accounts/invite-many', async (req, res) => {
+  const want = new Set([].concat(req.body.ids || []));
+  let sent = 0, failed = 0;
+  for (const p of waitingPilots().filter(p => want.has(p.id))) {
+    const u = createUser({ email: p.email, name: p.fullName, role: 'pilot', pilotId: p.id });
+    try { await sendInvite(u, siteOf(req)); sent++; }
+    catch (e) { console.error('logbook invite to', p.email, e.message); db.remove('lbUsers', u.id); failed++; }
+  }
+  res.redirect(`/logbook-accounts?sent=${sent}&failed=${failed}`);
+});
+
 admin.get('/logbook-accounts', (req, res) => {
   const list = users().slice().sort((a, b) => (a.role === 'owner' ? 0 : 1) - (b.role === 'owner' ? 0 : 1) || a.name.localeCompare(b.name));
   const count = (u) => db.all('lbFlights').filter(f => f.uid === u.id && f.isFlight).length;
@@ -168,6 +196,7 @@ admin.get('/logbook-accounts', (req, res) => {
   res.send(layout({ title: 'Logbook accounts', active: '/logbook/', flash: link, body: `
 <div class="head"><div><h1>Logbook accounts</h1><div class="sub">Each person logs in to their own flight logbook with their email and password. Give a network pilot access from their pilot page (“Give logbook access”).</div></div>
 <div class="actions"><a class="btn" href="/logbook/">Open my logbook</a></div></div>
+${waitingSection(req)}
 ${!list.some(u => u.role === 'owner') ? `<section class="card"><h2>Set up your own logbook account first</h2>
 <p>${unowned ? `Your logbook (${unowned} flight records) will move into this account.` : ''} You'll get an email to set your password.</p>
 <form method="post" action="/logbook-accounts/owner" class="grid"><label>Your name<input name="name" required></label><label>Your email<input type="email" name="email" required></label><div class="full"><button>Create my account</button></div></form></section>` : ''}
