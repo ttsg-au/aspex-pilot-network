@@ -170,7 +170,7 @@ async function drawJobMap(j, fl) {
   if (!$('#jobMap')) return;
   const jobKey = curJob;
   jobMap = L.map('jobMap', { scrollWheelZoom: false });
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri' }).addTo(jobMap);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri' }).addTo(jobMap);
   const s = ops.sites[j.siteId], note = t => { if ($('#jobMapNote')) $('#jobMapNote').textContent = t; };
   const layers = []; let bounds = null;
   const approx = s && s.boundary && !s.areaHa;
@@ -447,7 +447,7 @@ function renderSiteEdit() {
 function drawSiteMap(s, matched, rep) {
   if (siteMap) { siteMap.remove(); siteMap = null; }
   siteMap = L.map('siteMap');
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri · Airspace © openAIP' }).addTo(siteMap);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri · Airspace © openAIP' }).addTo(siteMap);
   const toLL = ring => ring.map(([x, y]) => [y, x]);
   const layers = [];
   if (rep) for (const a of rep.all.filter(a => a.over || a.dist <= 5000)) {

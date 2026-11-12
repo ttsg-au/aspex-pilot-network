@@ -415,7 +415,7 @@ async function openFlight(f, tr) {
   if (!map) {
     map = L.map('map');
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri' }).addTo(map);
+      { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri' }).addTo(map);
   }
   setTimeout(() => map.invalidateSize(), 220);
   if (layer) { layer.remove(); layer = null; }
@@ -428,7 +428,7 @@ async function openFlight(f, tr) {
     L.polyline(c.map(p => [p[1], p[0]]), { color: '#ffb000', weight: 3 }),
     L.circleMarker([c[0][1], c[0][0]], { radius: 7, color: '#fff', weight: 2, fillColor: '#0f6e5a', fillOpacity: 1 }).bindTooltip('Take-off'),
   ]).addTo(map);
-  setTimeout(() => map.fitBounds(layer.getLayers()[0].getBounds(), { padding: [25, 25] }), 230);
+  setTimeout(() => map.fitBounds(layer.getLayers()[0].getBounds(), { padding: [25, 25], maxZoom: 18 }), 230);
 }
 
 let toastT;

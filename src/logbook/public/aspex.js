@@ -143,7 +143,7 @@ async function renderJobNetwork(key) {
   if ($('#netMap')) {
     if (netMap) { netMap.remove(); netMap = null; }
     netMap = L.map('netMap');
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 19, attribution: 'Imagery © Esri' }).addTo(netMap);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri' }).addTo(netMap);
     const group = L.featureGroup().addTo(netMap), site = ops.sites[j.siteId];
     if (site?.boundary) for (const poly of site.boundary) L.polygon(poly.map(r => r.map(p => [p[1], p[0]])), { color: '#fff', weight: 2, fillOpacity: 0.05 }).addTo(group);
     const colours = ['#ffb000', '#00c2ff', '#ff5d8f', '#7cff6b', '#c38bff'];
@@ -152,8 +152,8 @@ async function renderJobNetwork(key) {
       if (!r.ok) return;
       const c = (await r.json()).features[0].geometry.coordinates.map(q => [q[1], q[0]]);
       L.polyline(c, { color: colours[i % colours.length], weight: 2.5 }).bindPopup(`${esc(p.name)}<br>${dateOnly(f.startLocal)} ${timeOnly(f.startLocal)}–${timeOnly(f.endLocal)}<br>${num(f.durationMin, 1)} min · max ${num(f.maxHeightM, 0)} m${f.defect ? '<br>Defect: ' + esc(f.defect) : ''}`).addTo(group);
-      netMap.fitBounds(group.getBounds(), { padding: [20, 20] });
+      netMap.fitBounds(group.getBounds(), { padding: [20, 20], maxZoom: 18 });
     }));
-    setTimeout(() => { netMap.invalidateSize(); if (group.getLayers().length) netMap.fitBounds(group.getBounds(), { padding: [20, 20] }); }, 100);
+    setTimeout(() => { netMap.invalidateSize(); if (group.getLayers().length) netMap.fitBounds(group.getBounds(), { padding: [20, 20], maxZoom: 18 }); }, 100);
   }
 }
