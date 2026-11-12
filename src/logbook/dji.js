@@ -19,16 +19,32 @@ const loadParser = async () => (parser ||= (await import('dji-log-parser-js')).D
 
 // A file is "done" once it has a result that re-uploading can't improve.
 const FINAL = new Set(['ok', 'no fix', 'not a flight', 'track unreadable']);
-const isDone = (f) => f && FINAL.has(f.track);
+const isDone = (f) => f && FINAL.has(f.track)
+  && !(f.track === 'ok' && f.batteryCycles == null && !f.batteryCyclesChecked);   // look again for a missing charge-cycle count
 
 async function processFile(user, buf, file) {
   const uid = user.id;
   const DJILog = await loadParser();
   const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
   const existing = store.flightBySha(uid, sha256);
-  if (isDone(existing)) return { file, sha256, status: 'already had', flight: existing };
   // Network pilots without their own DJI developer key use Aspex's (the owner account's).
   const apiKey = (user.djiApiKey || db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
+  if (existing && FINAL.has(existing.track)) {
+    // Already logged. The only thing a re-import can add is a missing charge-cycle count, and it
+    // changes nothing else on the flight (the pilot's CASA details stay as they are).
+    if (isDone(existing)) return { file, sha256, status: 'already had', flight: existing };
+    let note;
+    try {
+      const log = new DJILog(new Uint8Array(buf));
+      let keys = store.getKeys(sha256);
+      if (!keys && apiKey && log.version >= 13) { keys = await log.fetchKeychains(apiKey); store.putKeys(sha256, keys); }
+      if (!keys && log.version >= 13) return { file, sha256, status: 'already had', flight: existing, note: 'add the DJI key in Settings to read its battery cycles' };
+      const cyc = batteryCycles(log, keys);
+      note = cyc.note;
+      const flight = db.update('lbFlights', existing.id, { batteryCycles: cyc.cycles ?? null, batteryCyclesChecked: true, batteryCyclesNote: note });
+      return { file, sha256, status: 'cycles checked', flight };
+    } catch (e) { return { file, sha256, status: 'already had', flight: existing, note: 'cycle check failed: ' + String(e?.message || e) }; }
+  }
 
   let entry;
   try {
@@ -66,7 +82,8 @@ async function processFile(user, buf, file) {
         if (frames) {
           Object.assign(entry, flightStats(frames, entry));
           const cyc = batteryCycles(log, keychains);
-          if (cyc != null) entry.batteryCycles = cyc;
+          if (cyc.cycles != null) entry.batteryCycles = cyc.cycles;
+          entry.batteryCyclesChecked = true; entry.batteryCyclesNote = cyc.note;
           const pts = trackPoints(frames, entry);
           if (pts.length >= 2) {
             const geo = JSON.stringify({ type: 'FeatureCollection', features: [{ type: 'Feature',
@@ -90,19 +107,27 @@ async function processFile(user, buf, file) {
   return { file, sha256, status: existing ? 'updated' : 'added', flight };
 }
 
-// The battery's charge-cycle count, as the battery itself reports it.
+// The battery's charge-cycle count, as the battery itself reports it: { cycles, note }.
+// The note says what the file held, so a missing count can be explained.
 function batteryCycles(log, keychains) {
+  const seen = {}; let staticRec = null, center = null;
   try {
     for (const r of log.records(keychains)) {
-      if (r.type === 'SmartBatteryGroup' && r.content.type === 'SmartBatteryStatic' && r.content.loop_times) {
-        const v = r.content.loop_times;                     // newer aircraft store it shifted one byte
-        const c = v >= 256 && v % 256 === 0 ? v / 256 : v;
-        return c < 3000 ? c : null;
-      }
-      if (r.type === 'CenterBattery' && r.content.numberOfDischarges) return r.content.numberOfDischarges;   // older aircraft
+      seen[r.type] = (seen[r.type] || 0) + 1;
+      if (r.type === 'SmartBatteryGroup') seen['SBG:' + r.content.type] = (seen['SBG:' + r.content.type] || 0) + 1;
+      if (!staticRec && r.type === 'SmartBatteryGroup' && r.content.type === 'SmartBatteryStatic') staticRec = r.content;
+      if (!center && r.type === 'CenterBattery') center = r.content;
     }
-  } catch {}
-  return null;
+  } catch (e) { return { cycles: null, note: 'records unreadable: ' + String(e?.message || e).slice(0, 120) }; }
+  if (staticRec && staticRec.loop_times) {
+    const v = staticRec.loop_times;                      // newer aircraft store it shifted one byte
+    const c = v >= 256 && v % 256 === 0 ? v / 256 : v;
+    if (c < 3000) return { cycles: c, note: 'SmartBatteryStatic loop_times ' + v };
+  }
+  if (center && center.numberOfDischarges) return { cycles: center.numberOfDischarges, note: 'CenterBattery numberOfDischarges' };
+  const kinds = Object.entries(seen).filter(([k]) => /Battery|SBG/.test(k)).map(([k, n]) => `${k}×${n}`).join(', ') || 'no battery records';
+  const detail = staticRec ? ` static: loop_times=${staticRec.loop_times}, design=${staticRec.designed_capacity}, life=${staticRec.battery_life}` : '';
+  return { cycles: null, note: `no cycle count (${kinds}${detail})` };
 }
 
 function trackPoints(frames, entry) {
