@@ -76,24 +76,40 @@ async function sendInvite(u, base, { reset = false } = {}) {
     ? `Hi ${first},\n\nHere's the link to set a new password for your Aspex flight logbook. It works for ${INVITE_DAYS} days.\n\nIf you didn't ask for this, you can ignore this email.`
     : `Hi ${first},
 
-You've been given your own **Aspex flight logbook** - a private record of your flights, drones and batteries, built from your DJI flight records. It's free for Aspex Pilot Network members, and it's yours to use for all your flying. Aspex only sees your flights on Aspex jobs.
+We've set you up with your own **Aspex flight logbook**. Here's what it's for and what it can do for you.
 
-**Getting started**
+**Why we're sending this**
 
-**1. Set your password.** Click the button below (the link works for ${INVITE_DAYS} days). After that, log in any time at ${base}/logbook/ with this email address.
+The logbook is how Aspex keeps track of its jobs. When you're assigned an Aspex job, the details will be in your logbook in one place: the site map and boundary, the SWMS, the site safety requirements, the site contact and the capture settings. When you import your flights, the ones on that job's site are matched to the job, so we can see the job's flying is done without you sending us flight sheets.
 
-**2. Windows PC: get Import Flights (once).** In your logbook click **Import flights**, then **Download Import Flights**, and save it to your desktop. It's personal to you - it sends flights to your logbook only, so don't share it.
+If you already keep your own logbook, that's fine. Keep using it. You'd just import your Aspex job flights here as well.
 
-**3. Import your flights.** Plug your DJI controller into the PC by USB and **switch the drone on as well** - with most DJI controllers the flight files only show up while the drone is on and linked. Then double-click **Import Flights** on your desktop. It copies new flights off the controller, sends them to your logbook, opens it, and closes itself.
+**What's in it for you**
 
-**The first time you run it, Windows may warn you** because it's a downloaded program: in your browser click **Keep** if asked, and if Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. It only asks once.
+• **Your CASA records, done for you.** It builds your operational log, remote pilot log and technical log from your DJI flight records.
+• **Reminders before things expire.** A Monday email if your RePL, insurance or drone registration is coming up for renewal, if a drone inspection is due, or if a battery is wearing out or has been sitting unused too long.
+• **Battery and drone health.** Charge cycles, capacity and storage for every battery, plus a maintenance log for each drone.
+• **It's yours, and it's free.** Use it for as much or as little of your flying as you like. Your flights stay private: Aspex only sees flights on Aspex jobs.
+
+**Getting started (about 10 minutes)**
+
+**1. Set your password.** Click the button below. The link works for ${INVITE_DAYS} days. After that, log in any time at ${base}/logbook/ with this email address.
+
+**2. Windows PC: get Import Flights (once).** In your logbook, click **Import flights**, then **Download Import Flights**, and save it to your desktop. It's personal to you and sends flights to your logbook only, so don't share it.
+
+**3. Import your flights.** Plug your DJI controller into the PC by USB and **switch the drone on as well**. With most DJI controllers, the flight files only show up while the drone is on and linked. Then double-click **Import Flights** on your desktop. It copies new flights off the controller, sends them to your logbook, opens it, and closes itself.
+
+**The first time you run it, Windows may warn you** because it's a downloaded program. In your browser, click **Keep** if asked. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. It only asks once.
 
 **On a Mac?** Skip steps 2 and 3. Copy the flight files (DJIFlightRecord_....txt) off your controller, then in your logbook click **Import flights** and drag them in.
 
-**4. Fill in the Me tab** - your name, ARN and RePL details - so your CASA logs and reminders are right.
+**4. Fill in the Me tab** with your name, ARN and RePL details, so your CASA logs and reminders are right.
 
-Any questions, just reply to this email.`;
-  await mail.send({ to: u.email, subject: reset ? 'Reset your Aspex flight logbook password' : 'Your Aspex flight logbook', text,
+Any questions, just reply to this email.
+
+Kimberly Olsen
+Aspex Drone Services`;
+  await mail.send({ to: u.email, subject: reset ? 'Reset your Aspex flight logbook password' : 'Your free Aspex flight logbook', text,
     buttons: [{ label: reset ? 'Set a new password' : 'Set your password', url: link, primary: true }] });
   return link;
 }
