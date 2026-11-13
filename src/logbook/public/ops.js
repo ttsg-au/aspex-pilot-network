@@ -472,9 +472,10 @@ const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000);
 async function impRefresh() {
   const j = await (await fetch('api/import/status')).json();
   cfgStatus.dji = j.dji;
-  $('#impDji').innerHTML = j.dji ? '' : '<p class="pill warn" style="display:block;padding:8px 10px">No DJI developer key yet, so flights are logged without GPS tracks or battery data. Add it under Settings below.</p>';
+  $('#impDji').innerHTML = j.dji ? '' : '<p class="pill warn" style="display:block;padding:8px 10px">No DJI developer key yet, so flights are logged without GPS tracks or battery data. ' + (j.owner ? 'Add it under Settings below.' : 'Please let Aspex know.') + '</p>';
   $('#impLog').textContent = j.uploads.length ? 'Recent imports:\n' + j.uploads.slice(0, 25).map(u => `  ${ago(u.at).padEnd(11)} ${u.file}  ${u.status}${u.track ? ' · ' + u.track : ''}  (${u.via})`).join('\n') + '\n' : '';
   const s = await (await fetch('api/settings')).json();
+  $('#impKeyRow').hidden = s.role !== 'owner';   // only the owner (Aspex) sees and sets the DJI key
   $('#impKeyHint').textContent = s.dji ? `key saved (ends ${s.djiHint})` : 'not set';
   $('#skyKeyHint').textContent = s.skydio ? `token saved (ends ${s.skydioHint})` : 'not set';
   $('#skySync').disabled = !s.skydio;

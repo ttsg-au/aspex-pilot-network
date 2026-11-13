@@ -89,7 +89,9 @@ router.get('/logbook/logbook.csv', (req, res) => {
 
 // ---------- import: status, manual upload in the browser, settings ----------
 router.get('/logbook/api/import/status', (req, res) => {
-  res.json({ dji: !!(req.lb.djiApiKey || '').trim(), uploads: store.uploads(req.lb.id).slice(0, 60) });
+  // Network pilots use the owner's (Aspex's) DJI key, so the key counts as set if either has one.
+  const dji = !!(req.lb.djiApiKey || '').trim() || !!(db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
+  res.json({ dji, owner: req.lb.role === 'owner', uploads: store.uploads(req.lb.id).slice(0, 60) });
 });
 // Files the browser needn't send: already logged, and either not a battery's latest flight or already
 // cycle-checked. So dropping a whole folder only uploads what's new plus each battery's latest flight.
@@ -139,7 +141,7 @@ router.get('/logbook/api/settings', (req, res) => {
 });
 router.post('/logbook/api/settings', (req, res) => {
   const b = req.body || {}, ch = {};
-  if (typeof b.djiApiKey === 'string') ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);
+  if (typeof b.djiApiKey === 'string' && req.lb.role === 'owner') ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);   // only the owner sets the DJI key
   if (typeof b.skydioToken === 'string') ch.skydioToken = b.skydioToken.trim().slice(0, 200);
   if (b.newUploadKey) ch.uploadKey = require('crypto').randomBytes(18).toString('base64url');
   db.update('lbUsers', req.lb.id, ch);
