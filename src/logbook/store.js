@@ -70,7 +70,32 @@ function putKeys(sha, keychains) {
 }
 
 // ---------- inventory ----------
+// DJI flight files only record the first 16 characters of the aircraft serial (1581F5FJD241Q00D), while
+// other sources (e.g. Drone Logbook) hold the full one (1581F5FJD241Q00D82NU). Treat them as one drone:
+// flights, the inventory entry and maintenance records all move to the shorter serial already in use.
+function mergeTruncatedSerials(uid) {
+  const fl = flights(uid);
+  const inv0 = state('inventory', uid, null);
+  const sns = [...new Set([...fl.map(f => f.aircraftSn), ...Object.keys(inv0?.aircraft || {})].filter(Boolean))];
+  const map = {};
+  for (const a of sns) for (const b of sns) if (a !== b && a.length >= 14 && b.startsWith(a)) map[b] = a;   // long -> short
+  if (!Object.keys(map).length) return 0;
+  for (const f of fl) if (map[f.aircraftSn]) db.update('lbFlights', f.id, { aircraftSn: map[f.aircraftSn] });
+  const inv = inv0;
+  if (inv && inv.aircraft) {
+    for (const [long, short] of Object.entries(map)) {
+      const L = inv.aircraft[long]; if (!L) continue;
+      const S = (inv.aircraft[short] ||= {});
+      for (const [k, v] of Object.entries(L)) if (S[k] == null || S[k] === '') S[k] = v;   // keep what the drone already had
+      delete inv.aircraft[long];
+    }
+    setState('inventory', uid, inv);
+  }
+  for (const r of db.all('lbOps')) if (r.uid === uid && r.kind === 'maint' && map[r.item?.sn]) db.update('lbOps', r.id, { item: { ...r.item, sn: map[r.item.sn] } });
+  return Object.keys(map).length;
+}
 function inventory(uid) {
+  mergeTruncatedSerials(uid);
   const inv = state('inventory', uid, {});
   inv.aircraft ||= {}; inv.batteries ||= {}; inv.payloads ||= {};
   for (const f of flights(uid)) {
@@ -87,7 +112,7 @@ function saveInventory(uid, b) {
   const cur = inventory(uid);
   for (const [kind, fields] of INV_FIELDS) {
     for (const [sn, item] of Object.entries(b[kind] || {})) {
-      if (!/^[A-Z0-9]{6,30}$/i.test(sn) || !item || typeof item !== 'object') continue;
+      if (!/^[A-Za-z0-9][A-Za-z0-9 ._-]{3,40}$/.test(sn) || !item || typeof item !== 'object') continue;   // serials can have dashes/spaces (Skydio, eBee)
       cur[kind][sn] ||= {};
       for (const k of fields) if (k in item) cur[kind][sn][k] = clean(item[k], k === 'notes' ? 1000 : 60);
     }
@@ -183,7 +208,7 @@ async function claimUnowned(uid) {
   return { flights: n, djiApiKey: s?.value?.djiApiKey || '' };
 }
 
-module.exports = {
+module.exports = { mergeTruncatedSerials,
   clean, flights, flightBySha, flightByFile, putFlight, renumber, publicFlight,
   getKeys, putKeys, inventory, saveInventory, ops, saveOps, putOps, updateSite, safeKey,
   noteUpload, uploads, claimUnowned, state, setState,

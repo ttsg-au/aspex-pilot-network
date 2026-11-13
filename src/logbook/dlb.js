@@ -67,6 +67,9 @@ function plan(user, files) {
   const byId = (rows) => Object.fromEntries((rows || []).map(r => [col(r, 'Internal ID') || r.GUID || '', r]).filter(([k]) => k));
   const drones = byId(got.drones), bats = byId(got.batteries), locs = byId(got.locations);
   const existing = store.flights(user.id);
+  const knownSn = [...new Set(existing.map(f => f.aircraftSn).filter(Boolean))];
+  // DJI files hold only the first 16 characters of the serial: use the one this logbook already knows.
+  const canonSn = (sn) => knownSn.find(k => k !== sn && k.length >= 14 && String(sn).startsWith(k)) || sn;
   const bySha = new Set(existing.map(f => f.sha256));
 
   const prep = got.flights.map(r => {
@@ -119,7 +122,7 @@ function plan(user, files) {
       startUtc: new Date(startMs).toISOString(), startLocal, endLocal: plain(asUtcMs(startLocal) + p.sec * 1000),
       durationMin: Math.round(p.sec / 6) / 10, distanceKm: Number(col(r, 'Travelled Distance')) / 1000 || null, maxHeightM: Number(col(r, 'Max Altitude')) || null,
       takeoffLat: Number.isFinite(lat) && lat ? lat : null, takeoffLon: Number.isFinite(lon) && lon ? lon : null,
-      aircraftModel: MODEL[(p.model || '').toLowerCase()] || p.model || 'Unknown aircraft', aircraftName: p.name, aircraftSn: p.sn || (p.name ? 'DLB ' + p.name : ''),
+      aircraftModel: MODEL[(p.model || '').toLowerCase()] || p.model || 'Unknown aircraft', aircraftName: p.name, aircraftSn: p.sn ? canonSn(p.sn) : (p.name ? 'DLB ' + p.name : ''),
       batterySn: p.batterySn || '', dlbLocation: col(p.loc, 'Location Name', 'Name'),
       opType: col(r, 'Operation Type'), landings: Number(col(r, 'Landings')) || 1,
       pic: pic && pic.toLowerCase() !== String(user.email || '').toLowerCase() ? pic : '',
