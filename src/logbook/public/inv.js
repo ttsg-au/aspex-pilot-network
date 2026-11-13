@@ -165,7 +165,7 @@ function renderBatteries() {
         <ol class="muted" style="font-size:12.5px;margin:0;padding-left:18px;max-width:520px">
           <li>Put <b>one</b> battery in the drone and mark it (sticker or texta) so you know which is which.</li>
           <li>Make the controller log it: <b>either</b> a short, low hover, <b>or</b> with the <b>propellers off</b>, start the motors for ~5 s and stop them. Just powering on is not enough — DJI only writes a record once the motors start.</li>
-          <li>Repeat for each battery, then plug the controller into the drone PC and double-click <b>Import Flights</b>. Each battery appears in the list above, newest first.</li>
+          <li>Repeat for each battery, then plug the controller into the drone PC and open <b>Import Flights</b>. Each battery appears in the list above, newest first.</li>
         </ol>
       </div></div>
     <div class="panel"><h2>Battery health <span class="hint">worked out from the flight logs · the worst check decides the colour</span></h2>

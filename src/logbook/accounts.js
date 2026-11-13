@@ -97,7 +97,7 @@ If you already keep your own logbook, that's fine. Keep using it. You'd just imp
 
 **2. Windows PC: get Import Flights (once).** In your logbook, click **Import flights**, then **Download Import Flights**, and save it to your desktop. It's personal to you and sends flights to your logbook only, so don't share it.
 
-**3. Import your flights.** Plug your DJI controller into the PC by USB and **switch the drone on as well**. With most DJI controllers, the flight files only show up while the drone is on and linked. Then double-click **Import Flights** on your desktop. It copies new flights off the controller, sends them to your logbook, opens it, and closes itself.
+**3. Import your flights.** Plug your DJI controller into the PC by USB and **switch the drone on as well**. With most DJI controllers, the flight files only show up while the drone is on and linked. Then open **Import Flights** on your desktop. It copies new flights off the controller, sends them to your logbook, opens it, and closes itself.
 
 **The first time you run it, Windows may warn you** because it's a downloaded program. In your browser, click **Keep** if asked. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. It only asks once.
 
