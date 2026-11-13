@@ -99,7 +99,12 @@ function renderInventory() {
 document.querySelectorAll('nav.subtabs button').forEach(b => b.onclick = () => { invView = b.dataset.iv; renderInventory(); });
 const opts = (list, v) => list.map(o => `<option${o === v ? ' selected' : ''}>${o}</option>`).join('');
 const flightsOf = (key, sn) => all.filter(f => f.isFlight && f[key] === sn).sort((a, b) => a.startLocal.localeCompare(b.startLocal));
-const bindSave = root => root.querySelectorAll('[data-f]').forEach(el => el.onchange = () => saveField(el));
+// Save when a box changes, and also as you type (after a short pause), so a code isn't lost
+// if the page is refreshed while the cursor is still in the box.
+const bindSave = root => root.querySelectorAll('[data-f]').forEach(el => {
+  el.onchange = () => { clearTimeout(el._t); if (el.value.trim() !== (el._saved ?? el.defaultValue).trim()) saveField(el); };
+  if (el.tagName === 'INPUT') el.oninput = () => { clearTimeout(el._t); el._t = setTimeout(() => saveField(el, { quiet: true }).then(() => { el._saved = el.value; }), 700); };
+});
 
 const SOURCES = ['Unknown', 'Genuine DJI', 'Non-genuine'];
 // Genuine vs non-genuine: how long each kind lasted, on the evidence in this logbook

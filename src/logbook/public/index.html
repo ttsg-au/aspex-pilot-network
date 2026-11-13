@@ -454,7 +454,7 @@ async function openFlight(f, tr) {
 let toastT;
 function toast(msg, ms = 1600) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), ms); }
 
-async function saveField(el) {
+async function saveField(el, { quiet = false } = {}) {
   const tr = el.closest('tr'), kind = tr.dataset.kind, sn = tr.dataset.sn, f = el.dataset.f;
   const value = el.value.trim();
   if (f === 'code' && value && kind === 'batteries') {
@@ -466,6 +466,7 @@ async function saveField(el) {
       body: JSON.stringify({ [kind]: { [sn]: { [f]: value } } }) });
     if (!r.ok) throw new Error(r.status);
     inv = await r.json(); toast('Saved');
+    if (quiet) return;   // saved while typing: don't redraw the page under the cursor
     if (f === 'status') renderInventory(); else render();
   } catch { toast('Could not save - is the logbook window still open?'); }
 }
