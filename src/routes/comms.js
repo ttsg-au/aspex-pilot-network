@@ -315,6 +315,13 @@ router.post('/jobs/:id/status', (req, res) => {
   res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent('Status: ' + jobStatusLabel(status)));
 });
 
+router.post('/jobs/:id/fill-from-logbook', (req, res) => {
+  const j = db.get('jobs', req.params.id);
+  if (!j) return res.redirect('/jobs');
+  const ok = require('../logbook/network').fillCalloutFromLogbook(j.id, req.body.key);
+  res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent(ok ? 'Job details filled in from the logbook job, and the two are linked.' : 'Couldn’t find that logbook job.') + '#invite');
+});
+
 router.post('/jobs/:id/assign', (req, res) => {
   const r = db.all('jobResponses').find(x => x.jobId === req.params.id && x.pilotId === req.body.pilotId);
   const p = r && db.get('pilots', r.pilotId);
@@ -362,6 +369,12 @@ ${assignedIds.length ? `<p><a class="btn ghost" href="/messages/new?ids=${assign
 ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.pilotId).join(',')}&subject=${encodeURIComponent('Update: ' + j.title)}">Email everyone invited</a></p>` : ''}
 </section>
 
+${(() => { const lb = require('../logbook/network').logbookJobsForCallout(j.id);
+  if (!lb.jobs.length) return '';
+  return `<form method="post" action="/jobs/${j.id}/fill-from-logbook" class="card"><h2>Job details from the logbook</h2>
+<p class="sub">Fills in <b>Job details (sent to pilots)</b> from a logbook job: site area, safety requirements, safety notes, capture settings and approval note. It also links the two, so pilots you assign see the job in their logbook. Never includes the client, site contact, Dropbox or SWMS links.</p>
+<label>Logbook job<select name="key">${lb.jobs.map(x => `<option value="${esc(x.key)}"${x.key === lb.linkedKey ? ' selected' : ''}>${esc(x.name)}${x.site ? ' · ' + esc(x.site) : ''}${x.start ? ' · ' + fmtDate(x.start) : ''}</option>`).join('')}</select></label>
+<button${String(j.details || '').trim() ? ' data-confirm="Replace the job details you have now?"' : ''}>Fill in job details</button></form>`; })()}
 <p class="sub">Site map, SWMS and capture settings: set up the site under <a href="/logbook/#sites">Sites</a>, make a job for it under <a href="/logbook/#jobs">logbook Jobs</a>, and choose this job in its <b>Pilot network job</b> box. Assigned pilots then see it in their logbook.</p>
 
 <section class="card" id="invite"><h2>Send this job to pilots</h2>

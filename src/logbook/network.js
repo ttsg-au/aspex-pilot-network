@@ -252,4 +252,22 @@ function pilotApprovalsForJob(key) {
   return db.all('lbUsers').filter(u => ids.has(u.pilotId) && !u.disabled).flatMap(u => pilotApprovals(u.id, key, x.job));
 }
 
-module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor };
+// For the admin call-out page: the owner's logbook jobs, which one is linked to this call-out, and
+// filling the call-out's details from a logbook job (linking the two at the same time).
+function logbookJobsForCallout(networkJobId) {
+  const o = owner(); if (!o) return { linkedKey: '', jobs: [] };
+  const ops = store.ops(o.id);
+  const jobs = Object.entries(ops.jobs).map(([key, j]) => ({ key, name: j.name || key, start: j.start || '', site: ops.sites[j.siteId]?.name || '' }))
+    .sort((a, b) => b.start.localeCompare(a.start));
+  const linkedKey = (Object.entries(ops.jobs).find(([, j]) => j.networkJobId === networkJobId) || [''])[0];
+  return { linkedKey, jobs };
+}
+function fillCalloutFromLogbook(networkJobId, key) {
+  const o = owner(); const ops = o && store.ops(o.id); const j = ops && store.safeKey(key) && ops.jobs[key];
+  if (!j) return false;
+  store.saveOps(o.id, { jobs: { [key]: { networkJobId } } });
+  db.update('jobs', networkJobId, { details: calloutDetails(j, ops.sites[j.siteId]) });
+  return true;
+}
+
+module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor, logbookJobsForCallout, fillCalloutFromLogbook };
