@@ -152,6 +152,22 @@ router.get('/logbook/api/aspex-jobs/:key/approval/:akey/doc', (req, res) => {   
 router.get('/logbook/api/network-jobs', ownerOnly, (req, res) => res.json({
   jobs: db.all('jobs').slice().sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || ''))).map(j => ({ id: j.id, title: j.title, startDate: j.startDate, status: j.status })),
 }));
+// Send a logbook job to network pilots: make (or reuse) its pilot network call-out, filled in from
+// the job, and link the two. The call-out page is where you pick pilots and edit the email.
+router.post('/logbook/api/jobs/:key/network-callout', ownerOnly, (req, res) => {
+  const key = store.safeKey(req.params.key);
+  const ops = key && store.ops(req.lb.id), j = ops && ops.jobs[key];
+  if (!j) return res.status(404).json({ error: 'Job not found' });
+  let nj = j.networkJobId && db.get('jobs', j.networkJobId);
+  if (!nj) {
+    const site = ops.sites[j.siteId];
+    nj = db.insert('jobs', { title: j.name || 'Aspex job', client: j.purpose || '', site: site?.name || '', location: '', state: '',
+      startDate: j.start || '', endDate: j.end || '', daysNeeded: '', part: 'any', respondBy: '', payNotes: '', requirements: '',
+      details: '', privateNotes: 'Made from logbook job: ' + (j.name || key), status: 'open' });
+    store.saveOps(req.lb.id, { jobs: { [key]: { networkJobId: nj.id } } });
+  }
+  res.json({ id: nj.id, url: `/jobs/${nj.id}#invite` });
+});
 router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
   const x = linkedJobs().find(l => l.key === req.params.key);
   if (!x) return res.json({ pilots: [] });
