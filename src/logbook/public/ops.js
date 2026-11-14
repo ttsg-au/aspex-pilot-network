@@ -379,6 +379,29 @@ function airspaceReport(s) {
   const apts = A.airports.filter(a => a.coords && c).map(a => ({ ...a, dist: Geo.distToPolys(a.coords, s.boundary) })).sort((x, y) => x.dist - y.dist);
   return { over: items.filter(i => i.over), near: items.filter(i => !i.over && i.dist <= 5000), apts: apts.filter(a => a.dist <= 15000), fetched: A.fetched, dataDate: A.dataDate, all: items };
 }
+// A plain verdict for a site: does flying here look like it needs an approval? (OpenAIP data - preliminary)
+const NM3 = 5556;                                             // 3 nautical miles in metres
+const OFFICIAL = 'This is a preliminary check from community-maintained OpenAIP data, not official data. Confirm it against official Airservices Australia data (for example in Airservices’ OpenSky app or another CASA-verified drone safety app) and check NOTAMs before flying.';
+function airspaceVerdict(s) {
+  if (!s?.boundary || !s.airspace) return null;
+  const rep = airspaceReport(s), hi = [], md = [];
+  for (const a of rep.over) {
+    const [k, t] = severity(a), what = `${a.name} (${ASP_TYPE[a.type] || 'airspace'}${ICAO[a.icaoClass] ? ', class ' + ICAO[a.icaoClass] : ''}, ${fmtLimit(a.lower)} – ${fmtLimit(a.upper)}${a.byNotam ? ', activated by NOTAM' : ''})`;
+    if (k === 'hi') hi.push(`The site is inside ${what}. An approval or permission is needed to fly here.`);
+    else if (t === 'Check base') md.push(`The site is under ${what}. Check the base against the ground height here: if it's within 400 ft of the ground, an approval is needed.`);
+    else if (t === 'Caution') md.push(`The site is inside ${what}. Check what applies here.`);
+  }
+  for (const a of rep.apts.filter(x => x.dist <= NM3)) md.push(`${a.name}${a.icao ? ' (' + a.icao + ')' : ''} is ${num(a.dist / 1000, 1)} km away, within 3 NM. If it's a controlled aerodrome, an approval is needed; if not, stay clear of its approach and departure paths and any traffic.`);
+  return { level: hi.length ? 'hi' : md.length ? 'md' : 'ok', lines: [...hi, ...md], fetched: rep.fetched };
+}
+function verdictBox(v, short) {
+  if (!v) return '';
+  const head = v.level === 'hi' ? '⚠ Approval likely needed' : v.level === 'md' ? '⚠ Check before flying - an approval may be needed' : '✓ No airspace or aerodrome issues found';
+  const bg = v.level === 'hi' ? '#fbe1df;color:#7a1810' : v.level === 'md' ? 'var(--warn-soft);color:#7a3e00' : 'var(--accent-soft);color:#0b4d3f';
+  return `<div style="margin:6px 0 10px;padding:10px 12px;border-radius:6px;background:${bg};font-size:13px"><b>${head}</b>
+    ${v.lines.length ? `<ul style="margin:4px 0 0 18px;padding:0">${v.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
+    <div style="margin-top:6px;font-size:12.5px"><b>Needs confirming:</b> ${esc(OFFICIAL)}${short ? '' : ` Checked ${new Date(v.fetched).toLocaleDateString('en-AU')}.`}</div></div>`;
+}
 function renderSiteEdit() {
   const s = ops.sites[curSite];
   if (!s) { $('#siteEdit').innerHTML = '<div class="empty">Pick a site on the left, or create one. Load the farm boundary from a Google Earth KML.</div>'; return; }
@@ -407,8 +430,7 @@ function renderSiteEdit() {
     <div id="siteMap"></div>
     <div class="sub2">
       <h4>Airspace <button class="btn sm" id="aspBtn" ${!s.boundary ? 'disabled' : ''}>${s.airspace ? 'Re-check airspace' : 'Check airspace'}</button></h4>
-      <div class="warnbox" style="margin:6px 0 10px"><b>Preliminary check only.</b> This uses community-maintained OpenAIP data and is for planning and quoting.
-        Before every flight, do the final airspace check in a CASA-verified drone safety app (for example OpenSky or ok2fly), and check NOTAMs.</div>
+      ${s.airspace && s.boundary ? verdictBox(airspaceVerdict(s)) : `<div class="warnbox" style="margin:6px 0 10px"><b>Preliminary check only.</b> ${esc(OFFICIAL)}</div>`}
       ${!s.boundary ? '<div class="muted">Load the site boundary first.</div>' : ''}
       ${rep ? `<div class="muted" style="font-size:12px;margin-bottom:6px">Checked ${new Date(rep.fetched).toLocaleString('en-AU')}${rep.dataDate ? ` · OpenAIP Australia data downloaded ${new Date(rep.dataDate).toLocaleDateString('en-AU')} (refreshed every 30 days)` : ''}</div>
         <div class="muted" style="font-size:12px;margin-bottom:8px"><span class="sev hi">Conflict</span> restricted / prohibited / control zone, or class A–D from the surface · <span class="sev md">Caution</span> CTAF areas, danger areas, low-based controlled airspace · <span class="sev lo">Info</span> frequency/FIA boundaries and other non-restrictive areas</div><b style="font-size:13px">Overlapping the site</b>${rep.over.map(row).join('') || '<div class="asp muted">No airspace from OpenAIP overlaps the boundary.</div>'}

@@ -134,6 +134,7 @@ function jobApprovalsSection(j, key) {
     <label class="aprow"><input type="checkbox" id="apReq"${j.approvalRequired === '1' ? ' checked' : ''}>
       <span>This job needs an approval or permission <span class="muted">(e.g. near a controlled airport, above 400 ft, restricted area, BVLOS, landowner permission)</span></span></label>
     ${j.approvalRequired === '1' ? `<div class="form" style="padding:6px 0"><label class="full">What's needed<input data-f="approvalNote" value="${esc(j.approvalNote)}" placeholder="e.g. Wellcamp airport authorisation, flying within 3 NM"></label></div>` : ''}
+    ${jobAirspaceHint(j)}
     <div id="apWarn"></div>
     <table class="sum">${linked.map(([id, a]) => `<tr><td><a href="#" data-open-ap="${id}">${esc(apName(a))}</a>${a.ref ? ` <span class="muted">${esc(a.ref)}</span>` : ''}</td>
       <td>${esc(apDates(a))}</td><td>${apPill(a)}${!apCovers(a, j) ? ' <span class="pill bad">doesn’t cover the job dates</span>' : ''}</td>
@@ -144,6 +145,15 @@ function jobApprovalsSection(j, key) {
       ${other.length ? `<select id="apLink" style="font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px"><option value="">Link an existing approval…</option>${other.map(([id, a]) => `<option value="${id}">${esc(apName(a))} (${esc(apDates(a))})</option>`).join('')}</select>` : ''}
     </div>`;
 }
+// What the site's airspace check says, inside the job (with a one-click "needs an approval").
+function jobAirspaceHint(j) {
+  const s = ops.sites[j.siteId];
+  if (!s) return '<p class="muted" style="font-size:12.5px">Choose a site with a boundary to check its airspace.</p>';
+  if (!s.boundary || !s.airspace) return `<p class="muted" style="font-size:12.5px">The site's airspace hasn't been checked yet: open the site on the <a href="#" data-goto-site="${esc(j.siteId)}">Sites tab</a> and click <b>Check airspace</b>.</p>`;
+  const v = airspaceVerdict(s);
+  return `<div style="font-size:12.5px;color:var(--muted);margin-top:6px">Site airspace check:</div>${verdictBox(v, true)}
+    ${v.level !== 'ok' && j.approvalRequired !== '1' ? '<button class="btn sm" id="apReqYes" style="margin-bottom:8px">Mark this job as needing an approval</button>' : ''}`;
+}
 // Warning when a job needs an approval and none covering its dates is linked. pilotCovering = approvals network pilots hold for it.
 function updateApWarn(j, key, pilotCovering = 0) {
   const el = $('#apWarn'); if (!el) return;
@@ -153,6 +163,8 @@ function updateApWarn(j, key, pilotCovering = 0) {
     : `<p class="pill bad" style="margin:4px 0 8px;white-space:normal">⚠ This job needs an approval, and none covering ${j.start ? 'its dates' : 'it'} is linked yet${j.networkJobId ? ' (by you or a pilot on the job)' : ''}.</p>`;
 }
 function bindJobApprovals(root, j, key) {
+  $('#apReqYes')?.addEventListener('click', async () => { await saveOps({ jobs: { [key]: { approvalRequired: '1' } } }); renderJobEdit(); });
+  root.querySelectorAll('[data-goto-site]').forEach(x => x.onclick = e => { e.preventDefault(); curSite = x.dataset.gotoSite; showView('sites'); });
   $('#apReq')?.addEventListener('change', async e => { await saveOps({ jobs: { [key]: { approvalRequired: e.target.checked ? '1' : '' } } }); renderJobEdit(); });
   root.querySelectorAll('[data-open-ap]').forEach(x => x.onclick = e => { e.preventDefault(); curAp = x.dataset.openAp; showView('approvals'); });
   $('#apNewForJob')?.addEventListener('click', () => { const jj = ops.jobs[key] || j;
@@ -167,9 +179,10 @@ function bindJobApprovals(root, j, key) {
 // ---------- on an Aspex job (pilot view) ----------
 function aspexApprovalsView(j) {
   const list = j.approvals || [];
-  if (!j.approvalRequired && !list.length) return '';
+  const v = j.site?.boundary && j.site?.airspace ? airspaceVerdict(j.site) : null;
+  if (!j.approvalRequired && !list.length && !(v && v.level !== 'ok')) return '';
   const covered = list.some(a => a.covers);
-  return `<div class="apbox"><b>Approvals</b>
+  return `<div class="apbox"><b>Approvals</b>${v ? `<div style="font-size:12.5px;color:var(--muted);margin-top:6px">Site airspace check:</div>${verdictBox(v, true)}` : ''}
     ${j.approvalRequired ? `<div style="margin:4px 0">This job needs an approval or permission${j.approvalNote ? `: <b>${esc(j.approvalNote)}</b>` : ''}.
       ${covered ? '<span class="pill ok">✓ covered</span>' : '<span class="pill bad">none covering the job dates yet</span>'}</div>` : ''}
     <table class="sum">${list.map(a => `<tr><td><b>${esc(a.title || a.type)}</b>${a.ref ? ` <span class="muted">${esc(a.ref)}</span>` : ''}<div class="muted" style="font-size:12px">${a.from === 'Aspex' ? 'Held by Aspex' : 'Yours'}${a.authority ? ' · issued by ' + esc(a.authority) : ''}${a.heightFt ? ` · max ${esc(a.heightFt)} ft` : ''}${a.area ? ' · ' + esc(a.area) : ''}</div>

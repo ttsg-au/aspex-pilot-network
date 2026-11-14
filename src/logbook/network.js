@@ -65,7 +65,7 @@ async function sendDoc(res, item) {
   res.type(file.mime || DOC_TYPES[name.split('.').pop().toLowerCase()] || 'application/octet-stream')
     .set('Content-Disposition', `inline; filename="${name}"`).send(file.content);
 }
-const siteOut = (s) => s && { name: s.name, areaHa: s.areaHa, centroid: s.centroid, boundary: s.boundary };
+const siteOut = (s) => s && { name: s.name, areaHa: s.areaHa, centroid: s.centroid, boundary: s.boundary, airspace: s.airspace };
 
 // Jobs a pilot (logbook user) has been assigned to.
 function jobsFor(u) {
