@@ -224,11 +224,16 @@ function jobSummary(j) {
   const lines = [
     ['Job', j.title], ['Type of work', j.client], ['Site', j.site], ['Location', [j.location, j.state].filter(Boolean).join(', ')],
     [win ? 'Work window' : 'Date', [fmtDate(j.startDate), win ? fmtDate(j.endDate) : ''].filter(Boolean).join(' – ')],
-    ['Days needed on site', j.daysNeeded && (win ? `${j.daysNeeded} – you choose which days within the window` : j.daysNeeded)],
+    ['Days needed on site', j.daysNeeded && ((/^\d+$/.test(String(j.daysNeeded).trim()) ? `${String(j.daysNeeded).trim()} day${String(j.daysNeeded).trim() === '1' ? '' : 's'}` : j.daysNeeded)
+      + (win ? ' – you choose which days within the window' : ''))],
     ['Suits', { A: 'Part A pilots (sub-2 kg)', B: 'Part B certified operators', any: 'Any pilot in the network' }[j.part]],
     ['Requirements', j.requirements], ['Rate', j.payNotes], ['Please respond by', fmtDate(j.respondBy)],
   ].filter(([, v]) => v);
   return lines.map(([k, v]) => `${k}: ${v}`).join('\n') + (j.details ? '\n\n' + j.details : '');
+}
+
+function defaultJobEmail(j) {
+  return `Hi {first_name},\n\nWe have a job coming up that may suit you. Details are below – please let me know if you're interested and available.\n\n${jobSummary(j)}\n\nKind regards,\nKimberly Olsen\nAspex Drone Services`;
 }
 
 function jobForm(j = {}, ids = []) {
@@ -259,7 +264,8 @@ const jobFields = (b) => ({
 router.get('/jobs', (req, res) => {
   const list = db.all('jobs').slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.send(layout({ title: 'Jobs', active: '/jobs', flash: flashOf(req), body: `
-<div class="head"><h1>Jobs</h1><div class="actions"><a class="btn" href="/jobs/new">New job</a></div></div>
+<div class="head"><h1>Jobs</h1><div class="actions"><a class="btn" href="/logbook/#jobs">New job</a></div></div>
+<p class="sub">Jobs are set up in the logbook's <b>Jobs</b> tab (site, dates, safety, rate and so on), then sent with its <b>Send to pilots</b> button. This list shows the jobs you've sent, with replies and who's assigned.</p>
 <div class="tablewrap"><table class="list"><thead><tr><th>Job</th><th>Where</th><th>Dates</th><th>Status</th><th>Responses</th></tr></thead><tbody>
 ${list.map(j => {
     const rs = db.where('jobResponses', r => r.jobId === j.id);
@@ -272,9 +278,7 @@ ${list.map(j => {
 </tbody></table></div>` }));
 });
 
-router.get('/jobs/new', (req, res) => {
-  res.send(layout({ title: 'New job', active: '/jobs', body: `<div class="head"><h1>New job</h1></div>${jobForm({}, idsFrom(req.query.ids))}` }));
-});
+router.get('/jobs/new', (req, res) => res.redirect('/logbook/#jobs'));
 
 // From the pilot list: choose an open job (or make a new one) for the selected pilots.
 router.get('/jobs/pick', (req, res) => {
@@ -284,7 +288,7 @@ router.get('/jobs/pick', (req, res) => {
 <div class="head"><h1>Send a job to ${ids.length} pilot${ids.length === 1 ? '' : 's'}</h1></div>
 ${open.length ? `<section class="card"><h2>Send an existing open job</h2><ul class="timeline">${open.map(j =>
     `<li><a href="/jobs/${j.id}?${ids.map(i => 'ids=' + i).join('&')}#invite"><b>${esc(j.title)}</b></a> · ${esc([j.location, j.state].filter(Boolean).join(', '))} · ${fmtDate(j.startDate)}</li>`).join('')}</ul></section>` : ''}
-<h2>Or create a new job</h2>${jobForm({}, ids)}` }));
+<p>Or <a href="/logbook/#jobs">set up a new job in the logbook</a> and click its <b>Send to pilots</b> button.</p>` }));
 });
 
 router.post('/jobs', (req, res) => {
@@ -344,6 +348,7 @@ router.get('/jobs/:id', (req, res) => {
   if (!j) return res.status(404).send(layout({ title: 'Not found', body: '<p>Job not found.</p>' }));
   const rs = db.where('jobResponses', r => r.jobId === j.id);
   const preIds = idsFrom(req.query.ids);
+  const lb = require('../logbook/network').logbookJobsForCallout(j.id);
   // Candidate list: pre-selected pilots, or filtered list (defaults to the job's state and Part).
   const fq = { ...req.query };
   if (!preIds.length && !('state' in req.query) && j.state) fq.state = j.state;
@@ -356,6 +361,7 @@ router.get('/jobs/:id', (req, res) => {
   res.send(layout({ title: j.title, active: '/jobs', flash: flashOf(req), body: `
 <div class="head"><div><a href="/jobs" class="muted">← Jobs</a><h1>${esc(j.title)}</h1>
 <div class="sub">${badge(jobStatusLabel(j.status), j.status === 'open' ? 'warn' : 'good')} ${esc([j.location, j.state].filter(Boolean).join(', '))} · ${fmtDate(j.startDate)}${isWindow(j) ? ' – ' + fmtDate(j.endDate) : ''}${j.daysNeeded ? ' · ' + esc(j.daysNeeded) + ' on site' : ''}</div></div>
+${lb.linkedKey ? `<a class="btn ghost" href="/logbook/#jobs/${encodeURIComponent(lb.linkedKey)}">Edit job in the logbook</a>` : ''}
 <form method="post" action="/jobs/${j.id}/status" class="stages">${JOB_STATUS.map(([v, l]) => `<button name="status" value="${v}" class="${j.status === v ? 'on' : ''}">${l}</button>`).join('')}</form></div>
 
 <section class="card"><h2>Responses</h2>
@@ -369,13 +375,10 @@ ${assignedIds.length ? `<p><a class="btn ghost" href="/messages/new?ids=${assign
 ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.pilotId).join(',')}&subject=${encodeURIComponent('Update: ' + j.title)}">Email everyone invited</a></p>` : ''}
 </section>
 
-${(() => { const lb = require('../logbook/network').logbookJobsForCallout(j.id);
-  if (!lb.jobs.length) return '';
-  return `<form method="post" action="/jobs/${j.id}/fill-from-logbook" class="card"><h2>Job details from the logbook</h2>
-<p class="sub">Fills in <b>Job details (sent to pilots)</b> from a logbook job: site area, safety requirements, safety notes, capture settings and approval note. It also links the two, so pilots you assign see the job in their logbook. Never includes the client, site contact, Dropbox or SWMS links.</p>
-<label>Logbook job<select name="key">${lb.jobs.map(x => `<option value="${esc(x.key)}"${x.key === lb.linkedKey ? ' selected' : ''}>${esc(x.name)}${x.site ? ' · ' + esc(x.site) : ''}${x.start ? ' · ' + fmtDate(x.start) : ''}</option>`).join('')}</select></label>
-<button${String(j.details || '').trim() ? ' data-confirm="Replace the job details you have now?"' : ''}>Fill in job details</button></form>`; })()}
-<p class="sub">Site map, SWMS and capture settings: set up the site under <a href="/logbook/#sites">Sites</a>, make a job for it under <a href="/logbook/#jobs">logbook Jobs</a>, and choose this job in its <b>Pilot network job</b> box. Assigned pilots then see it in their logbook.</p>
+${lb.linkedKey ? '' : lb.jobs.length ? `<form method="post" action="/jobs/${j.id}/fill-from-logbook" class="card"><h2>Link to the logbook job</h2>
+<p class="sub">This job was set up the old way, here on the Jobs page. Link it to its logbook job so it becomes one job: the details are filled in from the logbook (site, map, contact, safety, SWMS, Dropbox, capture settings) and pilots you assign see it in their logbook. Its rate, days needed and requirements carry over to the logbook job if that has none.</p>
+<label>Logbook job<select name="key">${lb.jobs.map(x => `<option value="${esc(x.key)}">${esc(x.name)}${x.site ? ' · ' + esc(x.site) : ''}${x.start ? ' · ' + fmtDate(x.start) : ''}</option>`).join('')}</select></label>
+<button${String(j.details || '').trim() ? ' data-confirm="Replace the job details you have now?"' : ''}>Link and fill in</button></form>` : ''}
 
 <section class="card" id="invite"><h2>Send this job to pilots</h2>
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
@@ -384,14 +387,11 @@ ${!preIds.length && ((!('state' in req.query) && j.state) || (!('part' in req.qu
 <div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
 ${candidates.some(p => !M.agreementOf(p)) ? '<p class="sub">Pilots without a signed agreement are left unticked. You can still tick them to let them know about the job, but they can’t be assigned until they’ve signed.</p>' : ''}
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
-<label>Message (the job details are added below it, then “I'm interested” and “Not available” buttons)<textarea name="intro" rows="5">Hi {first_name},
-
-We have a job coming up that may suit you. Details are below – please let me know if you're interested and available.</textarea></label>
-<details><summary>Preview the job details that will be included</summary><div class="msgbody">${nl2br(jobSummary(j))}</div></details>
+<label>Email (edit anything; {first_name} becomes each pilot's first name. “I'm interested” and “Not available” buttons are added at the bottom)<textarea name="body" rows="24">${esc(defaultJobEmail(j))}</textarea></label>
 <button data-confirm="Send this job now?">Send job</button>
 </form></section>
 
-<details class="card"><summary><b>Edit job</b></summary>${jobForm(j)}
+<details class="card"><summary><b>${lb.linkedKey ? 'Delete' : 'Edit job'}</b></summary>${lb.linkedKey ? '<p class="sub">Edit this job in the logbook. Deleting it here removes the replies and assignments; the logbook job stays.</p>' : jobForm(j)}
 <form method="post" action="/jobs/${j.id}/delete"><button class="link danger" data-confirm="Delete this job and its responses?">Delete job</button></form></details>` }));
 });
 
@@ -404,7 +404,7 @@ router.post('/jobs/:id/send', (req, res) => {
     const existing = db.all('jobResponses').find(r => r.jobId === j.id && r.pilotId === p.id);
     if (!existing) db.insert('jobResponses', { jobId: j.id, pilotId: p.id, answer: 'invited', invitedAt: db.now(), assigned: false, note: '' });
   }
-  const body = (req.body.intro || '') + '\n\n' + jobSummary(j) + '\n\nKind regards,\nKimberly Olsen\nAspex Drone Services';
+  const body = String(req.body.body || '').trim() ? String(req.body.body) : defaultJobEmail(j);
   startSend({ kind: 'job', jobId: j.id, pilots, subject: req.body.subject || 'Job available: ' + j.title, body });
   res.redirect(`/jobs/${j.id}?msg=` + encodeURIComponent(`Job sent to ${pilots.length} pilot${pilots.length === 1 ? '' : 's'}.`));
 });

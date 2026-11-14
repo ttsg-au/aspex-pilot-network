@@ -128,6 +128,7 @@ const OPS_FIELDS = {
   jobs: { name: 160, clientId: 48, siteId: 48, status: 30, ref: 80, purpose: 200, operator: 160, opType: 10,
     dropboxUrl: 600, sitemarkUrl: 600, start: 10, end: 10, notes: 4000,
     networkJobId: 40, swmsUrl: 600, capture: 3000,
+    town: 80, state: 5, daysNeeded: 40, payNotes: 200, requirements: 300, respondBy: 10,   // for the pilot call-out email
     siteContactName: 120, siteContactPhone: 40, safety: 1000, safetyNotes: 2000,
     approvalRequired: 3, approvalNote: 300 },   // site safety requirements + O&M contact   // shared with network pilots (network.js)
   // drone maintenance log: inspections (with ticked checklist), parts replaced, firmware updates, repairs

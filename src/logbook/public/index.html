@@ -298,8 +298,9 @@ async function load() {
   render(); renderInventory(); renderJobs(); renderSites();
   loadChecks();
   // Open a tab straight from a link, e.g. /logbook/#sites
-  const h = location.hash.slice(1);
+  const [h, hk] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (h && document.querySelector(`nav.tabs button[data-v="${h}"]:not([hidden])`)) showView(h);
+  if (h === 'jobs' && hk && ops.jobs[hk]) { curJob = hk; renderJobs(); }
 }
 // Each flight checked against the approvals register (needs OpenAIP data, so it loads after the logbook).
 let checks = {}, checksAirspace = true;

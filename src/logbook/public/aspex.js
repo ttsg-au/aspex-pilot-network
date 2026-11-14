@@ -131,20 +131,25 @@ async function renderJobNetwork(key) {
   const net = j.networkJobId ? await (await fetch(`api/jobs/${encodeURIComponent(key)}/network`)).json() : { pilots: [] };
   if (curJob !== key) return;
   const linked = j.networkJobId && netJobs.find(n => n.id === j.networkJobId);
-  el.innerHTML = `<h4>Network pilots</h4>
+  const STATES = ['NSW', 'QLD', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
+  el.innerHTML = `<h4>Send to network pilots</h4>
     <div class="form" style="padding:0 0 10px">
-      <div class="full">${linked
-        ? `Sent to the pilot network as <b>${esc(linked.title)}</b>. <button class="btn sm" id="nSend">Choose pilots / edit the email</button>
-           <div class="muted" style="font-size:12px;margin-top:4px">Pilots you click <b>Assign</b> for there see this job in their logbook and appear in the table below.</div>`
-        : `<button class="btn sm" id="nSend">Choose pilots and write the email</button>
-           <div class="muted" style="font-size:12px;margin-top:4px">Opens the pilot list with an email you can edit before sending, filled in from this job. Pilots you then assign see this job in their logbook.</div>`}</div>
-      <details class="full"><summary class="muted" style="font-size:12px;cursor:pointer">Already sent it from the Jobs page? Link it here</summary>
-        <label>Pilot network call-out<select id="nJob">${sel(netJobs.map(n => [n.id, `${n.title}${n.startDate ? ' · ' + dateOnly(n.startDate) : ''}`]), j.networkJobId, '— not sent —')}</select></label></details>
+      <div class="muted" style="grid-column:1/-1">Everything about the job is set up here. <b>Send to pilots</b> opens the pilot list with the email written for you from this job, which you can edit before sending. Pilots reply from the email; click <b>Assign</b> for the ones you want, and they see this job in their logbook.</div>
+      <label>Nearest town<input data-n="town" value="${esc(j.town || '')}" placeholder="e.g. Walla Walla"></label>
+      <label>State<select data-n="state">${sel(STATES.map(x => [x, x]), j.state || '', '—')}</select></label>
+      <label>Days needed on site<input data-n="daysNeeded" value="${esc(j.daysNeeded || '')}" placeholder="e.g. 2 days"></label>
+      <label>Rate / pay<input data-n="payNotes" value="${esc(j.payNotes || '')}" placeholder="e.g. $800/day, accommodation paid"></label>
+      <label>Respond by<input type="date" data-n="respondBy" value="${esc(j.respondBy || '')}"></label>
+      <label class="full">Requirements<input data-n="requirements" value="${esc(j.requirements || '')}" placeholder="e.g. Matrice 4T or Mavic 3T, White Card"></label>
       <label class="full">Site SWMS (link to the document - applies to everyone on site)<span><div class="linkrow"><input data-n="swmsUrl" value="${esc(j.swmsUrl || '')}" placeholder="paste the SWMS link (e.g. Dropbox)"></div></span></label>
       <label class="full">Aspex capture settings for pilots<textarea data-n="capture" rows="3" placeholder="e.g. 70% forward / 30% side overlap, GSD 3.3 cm, terrain follow, max 6.7 m/s, irradiance over 600 W/m²">${esc(j.capture || '')}</textarea></label>
-      <div class="muted" style="grid-column:1/-1">Operating basis: <b>Independent operator</b> - pilots fly under their own accreditation and their own checklists; the work isn't carried out under an Aspex ReOC. They must accept this, and the SWMS, before the job opens for them.<br>
-        <b>What pilots see:</b> job name, dates, site name and boundary, the Dropbox folder, the SWMS and these capture settings. <b>Never shown:</b> the client, reference/PO, SiteMark link, site owner/O&amp;M, notes and your own flights.</div>
+      <div class="full"><button class="btn" id="nSend">${j.networkJobId ? 'Send to more pilots / see replies' : 'Send to pilots'}</button></div>
+      <div class="muted" style="grid-column:1/-1">The email includes the job name, type of work, site, location and map link, dates window and days needed, rate, requirements, site contact, safety requirements, SWMS and Dropbox links, capture settings and the airspace check. <b>Never included:</b> the client, reference/PO, SiteMark link, site owner/O&amp;M and your notes.<br>
+        Operating basis: <b>Independent operator</b> - pilots fly under their own accreditation and their own checklists; the work isn't carried out under an Aspex ReOC. They must accept this, and the SWMS, before the job opens for them.</div>
+      ${!j.networkJobId && netJobs.length ? `<details class="full"><summary class="muted" style="font-size:12px;cursor:pointer">Already sent this job the old way, from the Jobs page? Link it</summary>
+        <label>Earlier call-out<select id="nJob">${sel(netJobs.map(n => [n.id, `${n.title}${n.startDate ? ' · ' + dateOnly(n.startDate) : ''}`]), '', '— choose —')}</select></label></details>` : ''}
     </div>
+    ${j.networkJobId ? '<h4>Assigned pilots</h4>' : ''}
     ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Approval flags</th><th>Their approvals</th><th>Complete</th></tr>
       ${net.pilots.map(p => {
         const d = p.flights.filter(f => f.serviceable === 'no');
@@ -171,13 +176,15 @@ async function renderJobNetwork(key) {
   updateApWarn(j, key, net.pilots.reduce((n, p) => n + (p.approvals || []).filter(a => a.covers).length, 0));
   $('#nSend').onclick = async () => {
     const w = window.open('', '_blank');   // open now so the browser doesn't block it
-    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-callout`, { method: 'POST' });
+    const v = typeof airspaceVerdict === 'function' ? airspaceVerdict(ops.sites[j.siteId]) : null;
+    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-callout`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ airspace: v ? { level: v.level, lines: v.lines } : null }) });
     if (!r.ok) { w?.close(); return toast('Couldn’t open the pilot list.'); }
     const { id, url } = await r.json();
     if (w) w.location = url; else location.href = url;
     ops.jobs[key].networkJobId = id; netJobs = null; renderJobNetwork(key);
   };
-  $('#nJob').onchange = async e => { await saveOps({ jobs: { [key]: { networkJobId: e.target.value } } }, e.target.value ? 'Shared with the pilot network job' : 'No longer shared'); renderJobNetwork(key); };
+  if ($('#nJob')) $('#nJob').onchange = async e => { await saveOps({ jobs: { [key]: { networkJobId: e.target.value } } }, e.target.value ? 'Shared with the pilot network job' : 'No longer shared'); renderJobNetwork(key); };
   el.querySelectorAll('[data-n]').forEach(x => x.onchange = () => saveOps({ jobs: { [key]: { [x.dataset.n]: x.value.trim() } } }));
 
   if ($('#netMap')) {

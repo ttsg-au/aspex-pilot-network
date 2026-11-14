@@ -160,40 +160,63 @@ const SAFETY_LABELS = (() => {
     return Object.fromEntries([...block.matchAll(/\['([a-z]+)',\s*'[^']*',\s*(['"])(.*?)\2\]/g)].map(m => [m[1], m[3]]));
   } catch { return {}; }
 })();
-// The job details for the call-out email, from the logbook job. Only what any invited pilot may see:
-// never the client, reference, SiteMark link, site owner/O&M or notes. The site contact, Dropbox
-// folder and SWMS link go to assigned pilots only, through their logbook.
-function calloutDetails(j, site) {
-  const out = [];
-  if (site?.areaHa) out.push(`Site area: about ${Math.round(site.areaHa)} ha`);
-  const safety = String(j.safety || '').split('|').map(k => SAFETY_LABELS[k]).filter(Boolean);
+// The job details for the call-out email, from the logbook job: everything about the site and the
+// job a pilot needs. Never the client, reference, SiteMark link, site owner/O&M or notes.
+function calloutDetails(j, site, airspace) {
+  const out = [], site1 = [];
+  if (site?.centroid) site1.push(`Map: https://www.google.com/maps/search/?api=1&query=${site.centroid[0]},${site.centroid[1]}`);
+  if (site?.areaHa) site1.push(`Site area: about ${Math.round(site.areaHa)} ha`);
+  if (j.siteContactName || j.siteContactPhone) site1.push(`Site contact: ${[j.siteContactName, j.siteContactPhone].filter(Boolean).join(', ')}`);
+  if (site1.length) out.push(site1.join('\n'));
+  const docs = [];
+  if (j.swmsUrl) docs.push('Site SWMS (please read before the job): ' + j.swmsUrl);
+  if (j.dropboxUrl) docs.push('Job folder (Dropbox): ' + j.dropboxUrl);
+  if (docs.length) out.push(docs.join('\n'));
+  const keys = String(j.safety || '').split('|');
+  const safety = keys.map(k => SAFETY_LABELS[k]).filter(Boolean);
   if (safety.length) out.push('Required on site:\n' + safety.map(x => '- ' + x).join('\n'));
-  if (String(j.safety || '').split('|').includes('powerlines'))
+  if (keys.includes('powerlines'))
     out.push('There are overhead power lines on this site. High-voltage lines must never be crossed (over, under or through). Smaller lines: clear them by at least 5 m above the wires unless the site sets a different rule.');
   if (j.safetyNotes) out.push('Safety notes:\n' + j.safetyNotes);
   if (j.capture) out.push('Capture settings:\n' + j.capture);
+  if (airspace?.lines?.length) out.push('Airspace (preliminary check from OpenAIP data - confirm with official data and NOTAMs before flying):\n' + airspace.lines.map(x => '- ' + x).join('\n'));
+  else if (airspace?.level === 'ok') out.push('Airspace: preliminary check found no issues (OpenAIP data - confirm with official data and NOTAMs before flying).');
   if (j.approvalRequired === '1') out.push('This job needs an airspace approval or permission' + (j.approvalNote ? ': ' + j.approvalNote : '.'));
   out.push('You fly this job as an independent operator, under your own accreditation and procedures. The work isn’t carried out under an Aspex ReOC. The site SWMS applies and must be followed.');
-  out.push('If you’re assigned, the site map, site contact, SWMS and Dropbox folder will be in your Aspex flight logbook under Aspex jobs.');
+  out.push('If you’re assigned, the job and site boundary map will also be in your Aspex flight logbook under Aspex jobs.');
   return out.join('\n\n');
 }
 
-// Send a logbook job to network pilots: make (or reuse) its pilot network call-out, filled in from
-// the job, and link the two. The call-out page is where you pick pilots and edit the email.
+// One job: the logbook job holds everything; its pilot network call-out (the email, replies and
+// assigning) is kept in step with it. Linking an older call-out first carries its rate, days etc.
+// into the logbook job where the logbook job has none.
+const CARRY = [['purpose', 'client'], ['start', 'startDate'], ['end', 'endDate'], ['town', 'location'], ['state', 'state'],
+  ['daysNeeded', 'daysNeeded'], ['payNotes', 'payNotes'], ['requirements', 'requirements'], ['respondBy', 'respondBy']];
+function syncCallout(uid, key, airspace) {
+  let ops = store.ops(uid); let j = ops.jobs[key];
+  if (!j) return null;
+  let nj = j.networkJobId && db.get('jobs', j.networkJobId);
+  if (nj) {
+    const back = {};
+    for (const [lk, ck] of CARRY) if (!j[lk] && nj[ck]) back[lk] = nj[ck];
+    if (Object.keys(back).length) { store.saveOps(uid, { jobs: { [key]: back } }); ops = store.ops(uid); j = ops.jobs[key]; }
+  }
+  const site = ops.sites[j.siteId];
+  const fields = { title: j.name || 'Aspex job', site: site?.name || '', details: calloutDetails(j, site, airspace), logbookJob: key };
+  for (const [lk, ck] of CARRY) fields[ck] = j[lk] || '';
+  if (nj) nj = db.update('jobs', nj.id, fields) || nj;
+  else {
+    nj = db.insert('jobs', { ...fields, part: 'any', privateNotes: '', status: 'open' });
+    store.saveOps(uid, { jobs: { [key]: { networkJobId: nj.id } } });
+  }
+  return nj;
+}
 router.post('/logbook/api/jobs/:key/network-callout', ownerOnly, (req, res) => {
   const key = store.safeKey(req.params.key);
-  const ops = key && store.ops(req.lb.id), j = ops && ops.jobs[key];
-  if (!j) return res.status(404).json({ error: 'Job not found' });
-  let nj = j.networkJobId && db.get('jobs', j.networkJobId);
-  if (!nj) {
-    const site = ops.sites[j.siteId];
-    nj = db.insert('jobs', { title: j.name || 'Aspex job', client: j.purpose || '', site: site?.name || '', location: '', state: '',
-      startDate: j.start || '', endDate: j.end || '', daysNeeded: '', part: 'any', respondBy: '', payNotes: '', requirements: '',
-      details: calloutDetails(j, site), privateNotes: 'Made from logbook job: ' + (j.name || key), status: 'open' });
-    store.saveOps(req.lb.id, { jobs: { [key]: { networkJobId: nj.id } } });
-  } else if (!String(nj.details || '').trim()) {   // made before details were filled in
-    nj = db.update('jobs', nj.id, { details: calloutDetails(j, ops.sites[j.siteId]) }) || nj;
-  }
+  const as = req.body?.airspace;
+  const airspace = as && typeof as === 'object' ? { level: String(as.level || '').slice(0, 10), lines: (Array.isArray(as.lines) ? as.lines : []).slice(0, 20).map(x => String(x).slice(0, 500)) } : null;
+  const nj = key && syncCallout(req.lb.id, key, airspace);
+  if (!nj) return res.status(404).json({ error: 'Job not found' });
   res.json({ id: nj.id, url: `/jobs/${nj.id}#invite` });
 });
 router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
@@ -263,11 +286,10 @@ function logbookJobsForCallout(networkJobId) {
   return { linkedKey, jobs };
 }
 function fillCalloutFromLogbook(networkJobId, key) {
-  const o = owner(); const ops = o && store.ops(o.id); const j = ops && store.safeKey(key) && ops.jobs[key];
-  if (!j) return false;
+  const o = owner(); const ops = o && store.ops(o.id);
+  if (!ops || !store.safeKey(key) || !ops.jobs[key]) return false;
   store.saveOps(o.id, { jobs: { [key]: { networkJobId } } });
-  db.update('jobs', networkJobId, { details: calloutDetails(j, ops.sites[j.siteId]) });
-  return true;
+  return !!syncCallout(o.id, key, null);
 }
 
 module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor, logbookJobsForCallout, fillCalloutFromLogbook };

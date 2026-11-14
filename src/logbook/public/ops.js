@@ -119,8 +119,8 @@ function renderJobEdit() {
       <label>Site<select data-f="siteId">${sel(sites, j.siteId, '— none —')}</select></label>
       <label>Status<select data-f="status">${sel(JOB_STATUS.map(x => [x, x]), j.status || 'Planned')}</select></label>
       <label>Reference / PO<input data-f="ref" value="${esc(j.ref)}"></label>
-      <label>Start<input type="date" data-f="start" value="${esc(j.start)}"></label>
-      <label>End<input type="date" data-f="end" value="${esc(j.end)}"></label>
+      <label>${myRole === 'owner' ? 'Start (window opens)' : 'Start'}<input type="date" data-f="start" value="${esc(j.start)}"></label>
+      <label>${myRole === 'owner' ? 'End (window closes)' : 'End'}<input type="date" data-f="end" value="${esc(j.end)}"></label>
       <label class="full">Nature and purpose of operation<input data-f="purpose" value="${esc(j.purpose)}" placeholder="e.g. Aerial thermography of solar arrays"></label>
       <label>Flown under (ReOC / operator)<input data-f="operator" value="${esc(j.operator)}"></label>
       <label>Usual operation type<select data-f="opType">${sel(OP_TYPES.map(x => [x, x]), j.opType || 'VLOS')}</select></label>
