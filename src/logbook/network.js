@@ -152,6 +152,32 @@ router.get('/logbook/api/aspex-jobs/:key/approval/:akey/doc', (req, res) => {   
 router.get('/logbook/api/network-jobs', ownerOnly, (req, res) => res.json({
   jobs: db.all('jobs').slice().sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || ''))).map(j => ({ id: j.id, title: j.title, startDate: j.startDate, status: j.status })),
 }));
+// Safety items, labelled as in the logbook (read from the logbook's own list so the two never differ).
+const SAFETY_LABELS = (() => {
+  try {
+    const src = require('fs').readFileSync(require('path').join(__dirname, 'public', 'aspex.js'), 'utf8');
+    const block = src.slice(src.indexOf('const SAFETY = ['), src.indexOf('];', src.indexOf('const SAFETY = [')));
+    return Object.fromEntries([...block.matchAll(/\['([a-z]+)',\s*'[^']*',\s*(['"])(.*?)\2\]/g)].map(m => [m[1], m[3]]));
+  } catch { return {}; }
+})();
+// The job details for the call-out email, from the logbook job. Only what any invited pilot may see:
+// never the client, reference, SiteMark link, site owner/O&M or notes. The site contact, Dropbox
+// folder and SWMS link go to assigned pilots only, through their logbook.
+function calloutDetails(j, site) {
+  const out = [];
+  if (site?.areaHa) out.push(`Site area: about ${Math.round(site.areaHa)} ha`);
+  const safety = String(j.safety || '').split('|').map(k => SAFETY_LABELS[k]).filter(Boolean);
+  if (safety.length) out.push('Required on site:\n' + safety.map(x => '- ' + x).join('\n'));
+  if (String(j.safety || '').split('|').includes('powerlines'))
+    out.push('There are overhead power lines on this site. High-voltage lines must never be crossed (over, under or through). Smaller lines: clear them by at least 5 m above the wires unless the site sets a different rule.');
+  if (j.safetyNotes) out.push('Safety notes:\n' + j.safetyNotes);
+  if (j.capture) out.push('Capture settings:\n' + j.capture);
+  if (j.approvalRequired === '1') out.push('This job needs an airspace approval or permission' + (j.approvalNote ? ': ' + j.approvalNote : '.'));
+  out.push('You fly this job as an independent operator, under your own accreditation and procedures. The work isn’t carried out under an Aspex ReOC. The site SWMS applies and must be followed.');
+  out.push('If you’re assigned, the site map, site contact, SWMS and Dropbox folder will be in your Aspex flight logbook under Aspex jobs.');
+  return out.join('\n\n');
+}
+
 // Send a logbook job to network pilots: make (or reuse) its pilot network call-out, filled in from
 // the job, and link the two. The call-out page is where you pick pilots and edit the email.
 router.post('/logbook/api/jobs/:key/network-callout', ownerOnly, (req, res) => {
@@ -163,8 +189,10 @@ router.post('/logbook/api/jobs/:key/network-callout', ownerOnly, (req, res) => {
     const site = ops.sites[j.siteId];
     nj = db.insert('jobs', { title: j.name || 'Aspex job', client: j.purpose || '', site: site?.name || '', location: '', state: '',
       startDate: j.start || '', endDate: j.end || '', daysNeeded: '', part: 'any', respondBy: '', payNotes: '', requirements: '',
-      details: '', privateNotes: 'Made from logbook job: ' + (j.name || key), status: 'open' });
+      details: calloutDetails(j, site), privateNotes: 'Made from logbook job: ' + (j.name || key), status: 'open' });
     store.saveOps(req.lb.id, { jobs: { [key]: { networkJobId: nj.id } } });
+  } else if (!String(nj.details || '').trim()) {   // made before details were filled in
+    nj = db.update('jobs', nj.id, { details: calloutDetails(j, ops.sites[j.siteId]) }) || nj;
   }
   res.json({ id: nj.id, url: `/jobs/${nj.id}#invite` });
 });
