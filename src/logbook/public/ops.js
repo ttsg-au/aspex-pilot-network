@@ -112,7 +112,7 @@ function renderJobEdit() {
   const st = jobStats(curJob);
   const link = (f, ph) => `<div class="linkrow"><input data-f="${f}" value="${esc(j[f])}" placeholder="${ph}">${j[f] ? `<a class="btn sm ghost" style="margin:0" href="${esc(j[f])}" target="_blank" rel="noopener">Open</a>` : ''}</div>`;
   $('#jobEdit').innerHTML = `
-    <h2>${esc(j.name || 'Untitled job')} <button class="btn sm danger" id="delJob">Delete job</button></h2>
+    <h2>${esc(j.name || 'Untitled job')} <span><button class="btn sm" id="jobPack">Job pack</button> <button class="btn sm danger" id="delJob">Delete job</button></span></h2>
     <div class="form">
       <label class="full">Job name<input data-f="name" value="${esc(j.name)}" placeholder="e.g. Walla Walla thermography Nov 2026"></label>
       <label>Client (who engages you)${myRole === 'owner' ? ' <span class="pill">never shown to pilots</span>' : ''}<select data-f="clientId">${sel(clients, j.clientId, '— none —')}</select></label>
@@ -148,6 +148,7 @@ function renderJobEdit() {
   drawJobMap(j, st.fl);
   bindSafety($('#jobEdit'), curJob);
   bindJobApprovals($('#jobEdit'), j, curJob);
+  $('#jobPack').onclick = () => openJobPack(packFromJob(curJob));
   renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {
@@ -397,9 +398,11 @@ const NM3 = 5556;                                             // 3 nautical mile
 const OFFICIAL = 'This is a preliminary check from community-maintained OpenAIP data, not official data. Confirm it against official Airservices Australia data (for example in Airservices’ OpenSky app or another CASA-verified drone safety app) and check NOTAMs before flying.';
 function airspaceVerdict(s) {
   if (!s?.boundary || !s.airspace) return null;
-  const rep = airspaceReport(s), hi = [], md = [], care = [];      // care = no approval needed, but take care
+  const rep = airspaceReport(s), hi = [], md = [], care = [], need = { controlled: false, restricted: false };      // care = no approval needed, but take care
   for (const a of rep.over) {
     const [k, t] = severity(a), what = `${a.name} (${ASP_TYPE[a.type] || 'airspace'}${ICAO[a.icaoClass] ? ', class ' + ICAO[a.icaoClass] : ''}, ${fmtLimit(a.lower)} – ${fmtLimit(a.upper)}${a.byNotam ? ', activated by NOTAM' : ''})`;
+    if (k === 'hi') need[[1, 3].includes(a.type) ? 'restricted' : 'controlled'] = true;
+    if (t === 'Check base') need.controlled = true;
     if (k === 'hi') hi.push(`The site is inside ${what}. An approval or permission is needed to fly here.`);
     else if (t === 'Check base') md.push(`The site is under ${what}. Check the base against the ground height here: if it's within 400 ft of the ground, an approval is needed.`);
     else if (t === 'Caution' && a.type === 13) care.push(`The site is inside ${what}. This is a CTAF area around a non-controlled aerodrome, not controlled airspace, so no approval is needed for it; keep clear of crewed aircraft.`);
@@ -407,10 +410,11 @@ function airspaceVerdict(s) {
   }
   for (const a of rep.apts.filter(x => x.dist <= NM3)) {
     const name = `${a.name}${a.icao ? ' (' + a.icao + ')' : ''}`, km = num(a.dist / 1000, 1), ctl = Controlled.check(a, s.airspace.airspaces, Geo)?.by;
+    if (ctl) need.controlled = true;
     if (ctl) hi.push(`${name} is ${km} km away, within 3 NM, and is a controlled aerodrome (${ctl}). An approval or authorisation is needed to fly within 3 NM of it.`);
     else care.push(`${name} is ${km} km away, within 3 NM. It isn't a controlled aerodrome, so no approval is needed for that, but stay out of its approach and departure paths and movement area, and keep clear of crewed aircraft.`);
   }
-  return { level: hi.length ? 'hi' : md.length ? 'md' : care.length ? 'care' : 'ok', lines: [...hi, ...md, ...care], fetched: rep.fetched };
+  return { level: hi.length ? 'hi' : md.length ? 'md' : care.length ? 'care' : 'ok', lines: [...hi, ...md, ...care], fetched: rep.fetched, need };
 }
 function verdictBox(v, short) {
   if (!v) return '';

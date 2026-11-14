@@ -5,6 +5,7 @@
 const Geo = require('./public/geo.cjs');
 const Controlled = require('./public/controlled.cjs');
 const store = require('./store');
+const db = require('../db');
 const sites = require('./sites');
 
 const NM3 = 5556, LIMIT_M = 120, TOL_M = 2;           // standard operating conditions: 400 ft (~120 m) AGL
@@ -25,20 +26,57 @@ async function index() {
 }
 const inBox = ([x, y], b) => x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3];
 
+// Where a flight went, relative to the airspace that matters: checked along its whole GPS route when
+// there is one (thinned to ~1 point per 5 s), otherwise from the take-off point. Saved per account
+// and redone only when the OpenAIP data changes, since reading every route is slow.
+function where(pts, ix) {
+  const r = { ctrl: null, ctrlAtStart: false, tower: null, restr: null, restrAtStart: false, notam: false, route: pts.length > 1 };
+  let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+  for (const [x, y] of pts) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const near = ix.zones.filter(z => !(z.box[2] < x0 || z.box[0] > x1 || z.box[3] < y0 || z.box[1] > y1));
+  const pad = 0.08, towers = ix.towers.filter(a => a.pt[0] > x0 - pad && a.pt[0] < x1 + pad && a.pt[1] > y0 - pad && a.pt[1] < y1 + pad);
+  pts.forEach((pt, i) => {
+    for (const z of near) {
+      if (!inBox(pt, z.box) || !Geo.inPolys(pt, z.polys)) continue;
+      if (Controlled.isControlledSfc(z) && !r.ctrl) { r.ctrl = z.name; r.ctrlAtStart = i === 0; }
+      if (Controlled.isRestrictedSfc(z) && !r.restr) { r.restr = z.name; r.restrAtStart = i === 0; r.notam = z.byNotam; }
+    }
+    for (const a of towers) { const d = Geo.metres(pt, a.pt); if (d <= NM3 && (!r.tower || d < r.tower.d)) r.tower = { name: a.name, icao: a.icao, d: Math.round(d) }; }
+  });
+  return r;
+}
+async function routePoints(f) {
+  const start = f.takeoffLat != null && f.takeoffLon != null ? [[f.takeoffLon, f.takeoffLat]] : [];
+  if (f.track !== 'ok' || !f.trackFile) return start;
+  try {
+    const file = await db.readFile(f.trackFile);
+    const c = JSON.parse(file.content.toString()).features?.[0]?.geometry?.coordinates || [];
+    const step = Math.max(1, Math.round(c.length / 2000));                 // at most ~2000 points per flight
+    return [...start, ...c.filter((p, i) => i % step === 0).map(p => [p[0], p[1]])];
+  } catch { return start; }
+}
+async function placesFor(uid, flights, ix) {
+  const st = store.state('trackcheck', uid, {});
+  const saved = st.at === ix.at ? st.bySha || {} : {};
+  let changed = st.at !== ix.at;
+  for (const f of flights) {
+    if (!f.isFlight || f.takeoffLat == null) continue;
+    const want = f.track === 'ok' && f.trackFile ? 'route' : 'start';
+    if (saved[f.sha256]?.from === want) continue;
+    saved[f.sha256] = { ...where(await routePoints(f), ix), from: want }; changed = true;
+  }
+  if (changed) store.setState('trackcheck', uid, { at: ix.at, bySha: saved });
+  return saved;
+}
+
 // What the flight needed. -> [{ need: 'height'|'controlled'|'restricted', text, notam? }]
-function needs(f, ix) {
+function needs(f, w) {
   const out = [];
   if (f.maxHeightM != null && f.maxHeightM > LIMIT_M + TOL_M) out.push({ need: 'height', text: `Flew to ${Math.round(f.maxHeightM)} m (${Math.round(f.maxHeightM / 0.3048)} ft), above 120 m / 400 ft` });
-  if (ix && f.takeoffLat != null && f.takeoffLon != null) {
-    const pt = [f.takeoffLon, f.takeoffLat];
-    const z = ix.zones.find(z => Controlled.isControlledSfc(z) && inBox(pt, z.box) && Geo.inPolys(pt, z.polys));
-    if (z) out.push({ need: 'controlled', text: `Took off inside controlled airspace (${z.name})` });
-    else {
-      const t = ix.towers.map(a => ({ a, d: Geo.metres(pt, a.pt) })).filter(x => x.d <= NM3).sort((x, y) => x.d - y.d)[0];
-      if (t) out.push({ need: 'controlled', text: `Took off ${(t.d / 1000).toFixed(1)} km from ${t.a.name}${t.a.icao ? ' (' + t.a.icao + ')' : ''}, a controlled aerodrome - within 3 NM` });
-    }
-    const r = ix.zones.find(z => Controlled.isRestrictedSfc(z) && inBox(pt, z.box) && Geo.inPolys(pt, z.polys));
-    if (r) out.push({ need: 'restricted', notam: r.byNotam, text: `Took off inside ${r.name}${r.byNotam ? ' (active only when NOTAM\'d - check whether it was active)' : ''}` });
+  if (w) {
+    if (w.ctrl) out.push({ need: 'controlled', text: `${w.ctrlAtStart ? 'Took off inside' : 'Flew into'} controlled airspace (${w.ctrl})` });
+    else if (w.tower) out.push({ need: 'controlled', text: `${w.route ? 'Came within' : 'Took off'} ${(w.tower.d / 1000).toFixed(1)} km ${w.route ? 'of' : 'from'} ${w.tower.name}${w.tower.icao ? ' (' + w.tower.icao + ')' : ''}, a controlled aerodrome - within 3 NM` });
+    if (w.restr) out.push({ need: 'restricted', notam: w.notam, text: `${w.restrAtStart ? 'Took off inside' : 'Flew into'} ${w.restr}${w.notam ? ' (active only when NOTAM\'d - check whether it was active)' : ''}` });
   }
   return out;
 }
@@ -73,10 +111,10 @@ async function checkFlights(uid, flights, extraApprovals = []) {
   const ops = store.ops(uid);
   const mine = Object.entries(ops.approvals || {}).map(([key, a]) => ({ key, a, ops }));
   const list = [...mine, ...extraApprovals];
-  const out = {};
+  const out = {}, at = ix ? await placesFor(uid, flights, ix) : {};
   for (const f of flights) {
     if (!f.isFlight) continue;
-    const ns = needs(f, ix);
+    const ns = needs(f, at[f.sha256]);
     if (!ns.length) { out[f.sha256] = { status: 'ok', issues: [] }; continue; }
     const issues = ns.map(n => {
       const hit = list.find(x => covers(x.a, n, f, x.ops));
@@ -94,4 +132,4 @@ async function checkFlights(uid, flights, extraApprovals = []) {
   return { airspace, checkedAt: new Date().toISOString(), flights: out };
 }
 
-module.exports = { checkFlights, needs, covers };
+module.exports = { checkFlights, needs, covers, where };

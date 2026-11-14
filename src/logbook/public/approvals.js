@@ -29,6 +29,17 @@ const apFor = jobKey => Object.entries(ops.approvals || {}).filter(([, a]) => ap
 const apPill = a => { const [t, c] = apStatus(a); return `<span class="pill ${c}">${esc(t)}</span>`; };
 const apDates = a => a.validFrom || a.validTo ? `${a.validFrom ? dateOnly(a.validFrom) : '…'} – ${a.validTo ? dateOnly(a.validTo) : 'no end date'}` : 'no dates';
 
+// Does this approval look wrong for a job's site? (the site's airspace check says it isn't needed there)
+function apMismatch(a, siteId) {
+  const s = ops.sites?.[siteId], v = s?.boundary && s.airspace ? airspaceVerdict(s) : null, t = a.type || '';
+  if (!v) return '';
+  if (/controlled airport|airport \/ helipad/i.test(t) && !v.need.controlled)
+    return `${s.name || 'This site'} isn't in controlled airspace or within 3 NM of a controlled aerodrome (by the site's airspace check). Check this is the right approval for it.`;
+  if (/restricted area/i.test(t) && !v.need.restricted) return `${s.name || 'This site'} isn't inside a restricted area (by the site's airspace check). Check this is the right approval for it.`;
+  return '';
+}
+const mismatchPill = (msg) => msg ? ` <span class="pill warn" title="${esc(msg)}" style="white-space:normal">⚠ ${esc(msg)}</span>` : '';
+
 function renderApprovals() {
   const v = $('#v-approvals'); if (!v) return;
   if (!v.querySelector('#apList')) v.innerHTML = `<div class="split">
@@ -38,7 +49,7 @@ function renderApprovals() {
   $('#newAp').onclick = () => newApproval({});
   const list = Object.entries(ops.approvals || {});
   const groups = [['Current', 0], ['Not started yet', 1], ['Expired', 2]];
-  const item = ([id, a]) => `<div class="it ${id === curAp ? 'on' : ''}" data-id="${id}"><b>${esc(apName(a))}</b> ${apPill(a)}
+  const item = ([id, a]) => `<div class="it ${id === curAp ? 'on' : ''}" data-id="${id}"><b>${esc(apName(a))}</b> ${apPill(a)}${a.type ? '' : ' <span class="pill warn">type not set</span>'}
     <div class="s">${a.ref ? esc(a.ref) + ' · ' : ''}${esc(apDates(a))}${a.docFile ? ' · 📄' : ''}</div></div>`;
   const head = t => `<div style="padding:8px 12px 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6b7a86;background:#f6f8f9">${t}</div>`;
   $('#apList').innerHTML = list.length ? groups.map(([t, g]) => {
@@ -51,7 +62,7 @@ function renderApprovals() {
 
 async function newApproval(init) {
   const id = newId(init.title || 'approval');
-  if (await saveOps({ approvals: { [id]: { type: AP_TYPES[0], ...init } } }, 'Approval added')) {
+  if (await saveOps({ approvals: { [id]: { type: '', ...init } } }, 'Approval added')) {
     curAp = id; showView('approvals');
   }
 }
@@ -64,18 +75,19 @@ function renderApEdit() {
   const jobs = Object.entries(ops.jobs).sort((x, y) => (y[1].start || '').localeCompare(x[1].start || ''));
   const jobRow = ([id, j], on, attr, warn) => `<label class="aprow"><input type="checkbox" ${attr}="${id}"${on ? ' checked' : ''}>
     <span><b>${esc(j.name || 'Untitled job')}</b> <span class="muted">${j.start ? esc(dateOnly(j.start)) + (j.end && j.end !== j.start ? ' – ' + esc(dateOnly(j.end)) : '') : 'no dates'}</span>
-    ${on && !apCovers(a, j) ? ' <span class="pill bad">job dates fall outside this approval</span>' : ''}${warn || ''}</span></label>`;
+    ${on && !apCovers(a, j) ? ' <span class="pill bad">job dates fall outside this approval</span>' : ''}${on && j.siteId ? mismatchPill(apMismatch(a, j.siteId)) : ''}${warn || ''}</span></label>`;
   const openJobs = jobs.filter(([id, j]) => mine.includes(id) || !(j.end || j.start) || (j.end || j.start) >= todayIso() || j.approvalRequired === '1');
   el.innerHTML = `
     <h2>${esc(apName(a))} ${apPill(a)} <button class="btn sm danger" id="delAp">Delete</button></h2>
     <div class="form">
-      <label class="full">Type<select data-a="type">${sel(AP_TYPES.map(x => [x, x]), a.type || AP_TYPES[0])}</select></label>
+      <label class="full">Type<select data-a="type"${a.type ? '' : ' style="border-color:#c0392b"'}>${sel(AP_TYPES.map(x => [x, x]), a.type || '', '— choose the type of approval —')}</select></label>
       <label class="full">Name (how you'll recognise it)<input data-a="title" value="${esc(a.title)}" placeholder="e.g. Toowoomba Wellcamp airport authorisation - Walla Walla"></label>
       <label>Issued by<input data-a="authority" value="${esc(a.authority)}" placeholder="e.g. CASA, Airservices, airport, landowner"></label>
       <label>Reference number<input data-a="ref" value="${esc(a.ref)}" placeholder="e.g. CASA.RPA.1234"></label>
       <label>Valid from<input type="date" data-a="validFrom" value="${esc(a.validFrom)}"></label>
       <label>Valid to<input type="date" data-a="validTo" value="${esc(a.validTo)}"></label>
       <label>Site<select data-a="siteId">${sel(sites, a.siteId, '— not for one site —')}</select></label>
+      ${a.siteId && apMismatch(a, a.siteId) ? `<div class="full warnbox" style="margin:0">⚠ ${esc(apMismatch(a, a.siteId))}</div>` : ''}
       <label>Maximum height (ft AGL)<input data-a="heightFt" value="${esc(a.heightFt)}" placeholder="e.g. 200"></label>
       <label class="full">Area covered<input data-a="area" value="${esc(a.area)}" placeholder="e.g. within 3 NM of the aerodrome, inside the site boundary only"></label>
       <label class="full">Conditions (what you must do - shown with the job)<textarea data-a="conditions" rows="4" placeholder="e.g. Notify the tower 15 min before and after; stay below 200 ft; observer required">${esc(a.conditions)}</textarea></label>
@@ -137,7 +149,7 @@ function jobApprovalsSection(j, key) {
     ${jobAirspaceHint(j)}
     <div id="apWarn"></div>
     <table class="sum">${linked.map(([id, a]) => `<tr><td><a href="#" data-open-ap="${id}">${esc(apName(a))}</a>${a.ref ? ` <span class="muted">${esc(a.ref)}</span>` : ''}</td>
-      <td>${esc(apDates(a))}</td><td>${apPill(a)}${!apCovers(a, j) ? ' <span class="pill bad">doesn’t cover the job dates</span>' : ''}</td>
+      <td>${esc(apDates(a))}</td><td>${apPill(a)}${!apCovers(a, j) ? ' <span class="pill bad">doesn’t cover the job dates</span>' : ''}${j.siteId ? mismatchPill(apMismatch(a, j.siteId)) : ''}</td>
       <td>${a.docFile ? `<a href="api/approvals/${encodeURIComponent(id)}/doc" target="_blank" rel="noopener">📄 Document</a>` : '<span class="muted">no document</span>'}</td></tr>`).join('')
       || '<tr><td class="muted">No approvals linked to this job.</td></tr>'}</table>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">

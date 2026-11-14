@@ -80,7 +80,8 @@ function renderAspex() {
           <div><b>Documents and data</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
             ${j.swmsUrl ? `<a class="btn sm" href="${esc(j.swmsUrl)}" target="_blank" rel="noopener">Site SWMS (applies on site)</a>` : ''}
             ${j.dropboxUrl ? `<a class="btn sm ghost" href="${esc(j.dropboxUrl)}" target="_blank" rel="noopener">Dropbox job folder</a>` : ''}
-            ${j.site?.boundary ? `<a class="btn sm ghost" href="aspex-jobs/${encodeURIComponent(j.key)}/site.kml">Site boundary (KML)</a>` : ''}</div></div>
+            ${j.site?.boundary ? `<a class="btn sm ghost" href="aspex-jobs/${encodeURIComponent(j.key)}/site.kml">Site boundary (KML)</a>` : ''}
+            <button class="btn sm" data-pack>Job pack (print / PDF)</button></div></div>
           <div><b>Aspex capture settings</b><div class="muted" style="white-space:pre-wrap;margin-top:6px">${esc(j.capture || 'None given - see the job folder.')}</div></div>
         </div>
         <div style="padding:0 14px 12px"><b>Your own pre-flight checks</b> <span class="muted">- your aircraft and operational checklists are your own; tick each day you completed them</span>
@@ -97,6 +98,7 @@ function renderAspex() {
   v.querySelectorAll('.aj').forEach(card => {
     const j = aspexJobs[card.dataset.i], url = 'api/aspex-jobs/' + encodeURIComponent(j.key);
     bindAspexApprovals(card, j);
+    card.querySelector('[data-pack]')?.addEventListener('click', () => openJobPack(packFromAspex(j)));
     card.querySelector('[data-accept]')?.addEventListener('click', async () => {
       const ticks = [...card.querySelectorAll('[data-ack]')].map(c => c.checked);
       const r = await post(url + '/ack', { ticks });
