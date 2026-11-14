@@ -34,7 +34,7 @@ router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
   ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace(/\.(cjs|js)"><\/script>/g, `.$1?v=${VERSION}"></script>`))
   : res.redirect('/logbook/'));
 router.get('/logbook/help', (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, 'help.html'))));
-router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js|approvals\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|controlled\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js|approvals\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
 
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)

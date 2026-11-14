@@ -112,6 +112,58 @@ async function checkAirspace(uid, key, refresh = false) {
   return store.updateSite(uid, key, (site) => { site.airspace = airspace; });
 }
 
+// ---------- monthly check: OpenAIP control zones vs the published tower list ----------
+// Each control zone's own aerodrome (the one named in it, or else the one nearest its middle) should be
+// on the tower list, and each aerodrome on the list should have a control zone. Any difference is emailed
+// to Aspex once (and again only if the differences change), so a new or closed tower gets noticed.
+const Controlled = require('./public/controlled.cjs');
+async function towerCheck({ force = false } = {}) {
+  const db = require('../db'), mail = require('../mail');
+  const last = store.state('towercheck', 'all', {});
+  if (!force && last.at && Date.now() - Date.parse(last.at) < 30 * 864e5) return last;
+  const [asp, apt] = await Promise.all([oaipExport('asp'), oaipExport('apt')]);              // the 30-day copy, refreshed when older
+  const airports = apt.gj.features.filter(f => f.geometry?.type === 'Point' && /^Y[A-Z]{3}$/.test(f.properties?.icaoCode || ''))
+    .map(f => ({ icao: f.properties.icaoCode, name: String(f.properties.name || ''), pt: f.geometry.coordinates }));
+  const known = new Set(airports.map(a => a.icao));
+  const ctrOf = {};                                                   // icao -> control zone name
+  for (const f of asp.gj.features) {
+    if (!Controlled.isCtr(f.properties || {}) || !f.geometry) continue;
+    const polys = Geo.fromGeoJSON(f.geometry); if (!polys.length) continue;
+    const name = String(f.properties.name || ''), inside = airports.filter(a => Geo.inPolys(a.pt, polys));
+    if (!inside.length) continue;
+    const word = (s) => (s.toUpperCase().match(/[A-Z]{3,}/) || [''])[0];
+    const [cy, cx] = Geo.centroid(polys), d2 = (a) => (a.pt[0] - cx) ** 2 + (a.pt[1] - cy) ** 2;
+    const own = inside.find(a => word(a.name) && name.toUpperCase().includes(word(a.name))) || inside.sort((a, b) => d2(a) - d2(b))[0];
+    ctrOf[own.icao] ||= name;
+  }
+  const notOnList = Object.entries(ctrOf).filter(([k]) => !Controlled.LIST[k]).map(([k, n]) => `${k} - OpenAIP has a control zone (${n}), but it isn't on the tower list`);
+  const noZone = Object.entries(Controlled.LIST).filter(([k]) => !ctrOf[k]).map(([k, v]) => known.has(k)
+    ? `${k} ${v.name} (${v.by}) - on the tower list, but OpenAIP has no control zone for it`
+    : `${k} ${v.name} (${v.by}) - on the tower list, but not in OpenAIP's aerodrome data`);
+  const diffs = [...notOnList, ...noZone].sort();
+  const sig = diffs.join('|');
+  const out = { at: new Date().toISOString(), zones: Object.keys(ctrOf).length, diffs, emailedSig: last.emailedSig || '' };
+  if (diffs.length && sig !== last.emailedSig) {
+    const owner = db.all('lbUsers').find(u => u.role === 'owner');
+    try {
+      await mail.send({ to: owner?.email || config.adminEmail, subject: `Controlled aerodromes: ${diffs.length} difference${diffs.length === 1 ? '' : 's'} to check`,
+        text: `The logbook's monthly check compared OpenAIP's Australian control zones with the published list of aerodromes that have a control tower, and found these differences:\n\n${diffs.map(d => '- ' + d).join('\n')}\n\n`
+          + `Some may be expected (for example a military base whose control zone is only active by NOTAM, or a tower that's new and not yet in OpenAIP). `
+          + `Check each one against the official Airservices data (the AIP / ERSA). If the tower list needs changing, ask Claude to update the list in src/logbook/public/controlled.cjs.\n\n`
+          + `You'll only get this email again if the differences change.` });
+      out.emailedSig = sig;
+    } catch (e) { console.error('Tower check email failed:', e.message); }
+  }
+  if (!diffs.length) out.emailedSig = '';
+  store.setState('towercheck', 'all', out);
+  return out;
+}
+function startTowerCheck() {
+  const run = () => towerCheck().catch(e => console.error('Tower check:', e.message));
+  setTimeout(run, 3 * 60e3);
+  setInterval(run, 6 * 3600e3).unref?.();
+}
+
 // ---------- sites made from flight take-off points (for past flights with no farm boundary) ----------
 // The boundary is a circle around the take-offs (furthest take-off + 300 m, at least 500 m across),
 // so the flights fall inside it. It isn't the farm's real outline: load the farm KML later to replace it.
@@ -159,4 +211,4 @@ async function nearestPlace(lat, lon) {
   return name;
 }
 
-module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace };
+module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace, towerCheck, startTowerCheck };
