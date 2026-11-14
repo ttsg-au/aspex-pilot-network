@@ -152,7 +152,7 @@ function jobAirspaceHint(j) {
   if (!s.boundary || !s.airspace) return `<p class="muted" style="font-size:12.5px">The site's airspace hasn't been checked yet: open the site on the <a href="#" data-goto-site="${esc(j.siteId)}">Sites tab</a> and click <b>Check airspace</b>.</p>`;
   const v = airspaceVerdict(s);
   return `<div style="font-size:12.5px;color:var(--muted);margin-top:6px">Site airspace check:</div>${verdictBox(v, true)}
-    ${v.level !== 'ok' && j.approvalRequired !== '1' ? '<button class="btn sm" id="apReqYes" style="margin-bottom:8px">Mark this job as needing an approval</button>' : ''}`;
+    ${(v.level === 'hi' || v.level === 'md') && j.approvalRequired !== '1' ? '<button class="btn sm" id="apReqYes" style="margin-bottom:8px">Mark this job as needing an approval</button>' : ''}`;
 }
 // Warning when a job needs an approval and none covering its dates is linked. pilotCovering = approvals network pilots hold for it.
 function updateApWarn(j, key, pilotCovering = 0) {

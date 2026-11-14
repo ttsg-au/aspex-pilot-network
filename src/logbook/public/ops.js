@@ -381,23 +381,36 @@ function airspaceReport(s) {
 }
 // A plain verdict for a site: does flying here look like it needs an approval? (OpenAIP data - preliminary)
 const NM3 = 5556;                                             // 3 nautical miles in metres
+// Controlled aerodromes (with a control tower), by ICAO code. Civil towers: Airservices' Part 172 certificate (Jul 2025).
+// Military towers: Defence. Tower hours vary - outside them the aerodrome may be non-controlled; confirm in the official data.
+const CONTROLLED = Object.fromEntries([
+  ...'YPAD Adelaide,YMAY Albury,YBAS Alice Springs,YBAF Archerfield,YMAV Avalon,YBNA Ballina,YSBK Bankstown,YBBN Brisbane,YBRM Broome,YBCS Cairns,YSCN Camden,YSCB Canberra,YCFS Coffs Harbour,YMEN Essendon,YBCG Gold Coast,YBHM Hamilton Island,YMHB Hobart,YPJT Jandakot,YPKA Karratha,YMLT Launceston,YBMK Mackay,YMML Melbourne,YMMB Moorabbin,YPPF Parafield,YPPH Perth,YBRK Rockhampton,YBSU Sunshine Coast,YSSY Sydney,YSTW Tamworth,YSWS Western Sydney'
+    .split(',').map(x => [x.slice(0, 4), 'Airservices tower']),
+  ...'YAMB Amberley,YPDN Darwin,YBTL Townsville,YWLM Williamtown,YSRI Richmond,YSNW Nowra,YMES East Sale,YPED Edinburgh,YPEA Pearce,YPTN Tindal,YBOK Oakey,YPLM Learmonth,YBSG Scherger,YCIN Curtin'
+    .split(',').map(x => [x.slice(0, 4), 'military tower']),
+]);
 const OFFICIAL = 'This is a preliminary check from community-maintained OpenAIP data, not official data. Confirm it against official Airservices Australia data (for example in Airservices’ OpenSky app or another CASA-verified drone safety app) and check NOTAMs before flying.';
 function airspaceVerdict(s) {
   if (!s?.boundary || !s.airspace) return null;
-  const rep = airspaceReport(s), hi = [], md = [];
+  const rep = airspaceReport(s), hi = [], md = [], care = [];      // care = no approval needed, but take care
   for (const a of rep.over) {
     const [k, t] = severity(a), what = `${a.name} (${ASP_TYPE[a.type] || 'airspace'}${ICAO[a.icaoClass] ? ', class ' + ICAO[a.icaoClass] : ''}, ${fmtLimit(a.lower)} – ${fmtLimit(a.upper)}${a.byNotam ? ', activated by NOTAM' : ''})`;
     if (k === 'hi') hi.push(`The site is inside ${what}. An approval or permission is needed to fly here.`);
     else if (t === 'Check base') md.push(`The site is under ${what}. Check the base against the ground height here: if it's within 400 ft of the ground, an approval is needed.`);
+    else if (t === 'Caution' && a.type === 13) care.push(`The site is inside ${what}. This is a CTAF area around a non-controlled aerodrome, not controlled airspace, so no approval is needed for it; keep clear of crewed aircraft.`);
     else if (t === 'Caution') md.push(`The site is inside ${what}. Check what applies here.`);
   }
-  for (const a of rep.apts.filter(x => x.dist <= NM3)) md.push(`${a.name}${a.icao ? ' (' + a.icao + ')' : ''} is ${num(a.dist / 1000, 1)} km away, within 3 NM. If it's a controlled aerodrome, an approval is needed; if not, stay clear of its approach and departure paths and any traffic.`);
-  return { level: hi.length ? 'hi' : md.length ? 'md' : 'ok', lines: [...hi, ...md], fetched: rep.fetched };
+  for (const a of rep.apts.filter(x => x.dist <= NM3)) {
+    const name = `${a.name}${a.icao ? ' (' + a.icao + ')' : ''}`, km = num(a.dist / 1000, 1), ctl = CONTROLLED[String(a.icao || '').toUpperCase()];
+    if (ctl) hi.push(`${name} is ${km} km away, within 3 NM, and is a controlled aerodrome (${ctl}). An approval or authorisation is needed to fly within 3 NM of it.`);
+    else care.push(`${name} is ${km} km away, within 3 NM. It isn't a controlled aerodrome, so no approval is needed for that, but stay out of its approach and departure paths and movement area, and keep clear of crewed aircraft.`);
+  }
+  return { level: hi.length ? 'hi' : md.length ? 'md' : care.length ? 'care' : 'ok', lines: [...hi, ...md, ...care], fetched: rep.fetched };
 }
 function verdictBox(v, short) {
   if (!v) return '';
-  const head = v.level === 'hi' ? '⚠ Approval likely needed' : v.level === 'md' ? '⚠ Check before flying - an approval may be needed' : '✓ No airspace or aerodrome issues found';
-  const bg = v.level === 'hi' ? '#fbe1df;color:#7a1810' : v.level === 'md' ? 'var(--warn-soft);color:#7a3e00' : 'var(--accent-soft);color:#0b4d3f';
+  const head = v.level === 'hi' ? '⚠ Approval likely needed' : v.level === 'md' ? '⚠ Check before flying - an approval may be needed' : v.level === 'care' ? 'No approval needed, but take care near the aerodrome' : '✓ No airspace or aerodrome issues found';
+  const bg = v.level === 'hi' ? '#fbe1df;color:#7a1810' : v.level === 'md' || v.level === 'care' ? 'var(--warn-soft);color:#7a3e00' : 'var(--accent-soft);color:#0b4d3f';
   return `<div style="margin:6px 0 10px;padding:10px 12px;border-radius:6px;background:${bg};font-size:13px"><b>${head}</b>
     ${v.lines.length ? `<ul style="margin:4px 0 0 18px;padding:0">${v.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
     <div style="margin-top:6px;font-size:12.5px"><b>Needs confirming:</b> ${esc(OFFICIAL)}${short ? '' : ` Checked ${new Date(v.fetched).toLocaleDateString('en-AU')}.`}</div></div>`;
