@@ -12,7 +12,7 @@ const SAFETY = [
   ['longs', '👖', 'Long sleeves and long pants'], ['glasses', '🕶️', 'Safety glasses (tinted)'], ['sun', '🧢', 'Sun protection - hat, sunscreen, sunglasses'],
   ['hardhat', '⛑️', 'Hard hat'], ['gloves', '🧤', 'Gloves'], ['cones', '🚧', 'Traffic cones to mark the landing area'],
   ['pad', '🎯', 'Landing pad'], ['firstaid', '🩹', 'First aid kit incl. snake-bite bandages'], ['water', '💧', 'Plenty of water / heat stress plan'],
-  ['fire', '🧯', 'Fire extinguisher + LiPo battery bag'], ['comms', '📞', 'Phone/UHF + site emergency contacts'], ['insects', '🦟', 'Insect repellent'],
+  ['fire', '🧯', 'Fire extinguisher'], ['comms', '📞', 'Phone/UHF + site emergency contacts'], ['insects', '🦟', 'Insect repellent'],
   ['vehicle', '🚗', 'Site vehicle rules (speed limit, beacon/flag)'], ['electrical', '⚡', "Electrical hazard - don't touch panels, inverters, cabling; stay out of HV yards"],
   ['lone', '👤', 'Lone worker check-ins'], ['observer', '👀', 'Visual observer'], ['powerlines', '🗼', 'Overhead power lines on site'],
 ];
