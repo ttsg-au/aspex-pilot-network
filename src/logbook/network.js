@@ -55,8 +55,17 @@ const approvalOut = (key, a, from, job) => ({ key, from, type: a.type, title: a.
   docName: a.docFile ? a.docName : '', covers: store.covers(a, job || {}) });
 const ownerApprovals = (key, job) => { const o = owner(); if (!o) return [];
   return Object.entries(store.ops(o.id).approvals).filter(([, a]) => store.keysOf(a.jobs).includes(key)).map(([k, a]) => approvalOut(k, a, 'Aspex', job)); };
-const pilotApprovals = (uid, key, job) => Object.entries(store.ops(uid).approvals)
-  .filter(([, a]) => store.keysOf(a.aspexJobs).includes(key)).map(([k, a]) => approvalOut(k, a, 'pilot', job));
+// "Sighted": Aspex records that it received and looked at a copy of a pilot's approval, and when -
+// not that it checked the approval is adequate (the operation stays the pilot's). Kept in Aspex's own
+// records, against a fingerprint of the approval, so if the pilot changes its dates, type, reference or
+// document the record no longer matches and it shows as not sighted again.
+const sightSig = (a) => [a.type, a.ref, a.validFrom, a.validTo, a.heightFt, a.docFile].map(x => x || '').join('|');
+const sightings = () => { const o = owner(); return o ? store.state('sighted', o.id, {}) : {}; };
+const pilotApprovals = (uid, key, job) => { const seen = sightings();
+  return Object.entries(store.ops(uid).approvals).filter(([, a]) => store.keysOf(a.aspexJobs).includes(key)).map(([k, a]) => {
+    const s = seen[uid + ':' + k];
+    return { ...approvalOut(k, a, 'pilot', job), sightedAt: s && s.sig === sightSig(a) ? s.at : '' };
+  }); };
 const DOC_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
 async function sendDoc(res, item) {
   const file = item?.docFile && await db.readFile(item.docFile);
@@ -167,6 +176,17 @@ router.get('/logbook/api/jobs/:key/network-track/:uid/:file', ownerOnly, async (
   file ? res.type('application/geo+json').send(file.content) : res.status(404).end();
 });
 
+router.post('/logbook/api/jobs/:key/network-approval/:uid/:akey/sighted', ownerOnly, (req, res) => {
+  const x = linkedJobs().find(l => l.key === req.params.key);
+  const u = x && db.get('lbUsers', req.params.uid);
+  if (!u || !assignedPilotIds(x.job.networkJobId).has(u.pilotId)) return res.status(404).end();
+  const d = store.safeKey(req.params.akey) && store.opsDoc(u.id, 'approvals', req.params.akey);
+  if (!d || !store.keysOf(d.item.aspexJobs).includes(x.key)) return res.status(404).end();
+  const seen = sightings(), id = u.id + ':' + req.params.akey;
+  if (req.body?.on) seen[id] = { at: new Date().toISOString(), by: req.lb.email, sig: sightSig(d.item) }; else delete seen[id];
+  store.setState('sighted', req.lb.id, seen);
+  res.json({ sightedAt: seen[id]?.at || '' });
+});
 router.get('/logbook/api/jobs/:key/network-approval/:uid/:akey/doc', ownerOnly, (req, res) => {   // a pilot's own approval for the job
   const x = linkedJobs().find(l => l.key === req.params.key);
   const u = x && db.get('lbUsers', req.params.uid);

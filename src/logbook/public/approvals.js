@@ -197,13 +197,14 @@ function aspexApprovalsView(j) {
   return `<div class="apbox"><b>Approvals</b>${v ? `<div style="font-size:12.5px;color:var(--muted);margin-top:6px">Site airspace check:</div>${verdictBox(v, true)}` : ''}
     ${j.approvalRequired ? `<div style="margin:4px 0">This job needs an approval or permission${j.approvalNote ? `: <b>${esc(j.approvalNote)}</b>` : ''}.
       ${covered ? '<span class="pill ok">✓ covered</span>' : '<span class="pill bad">none covering the job dates yet</span>'}</div>` : ''}
-    <table class="sum">${list.map(a => `<tr><td><b>${esc(a.title || a.type)}</b>${a.ref ? ` <span class="muted">${esc(a.ref)}</span>` : ''}<div class="muted" style="font-size:12px">${a.from === 'Aspex' ? 'Held by Aspex' : 'Yours'}${a.authority ? ' · issued by ' + esc(a.authority) : ''}${a.heightFt ? ` · max ${esc(a.heightFt)} ft` : ''}${a.area ? ' · ' + esc(a.area) : ''}</div>
+    <table class="sum">${list.map(a => `<tr><td><b>${esc(a.title || a.type)}</b>${a.ref ? ` <span class="muted">${esc(a.ref)}</span>` : ''}<div class="muted" style="font-size:12px">${a.from === 'Aspex' ? 'Held by Aspex' : 'Yours' + (a.sightedAt ? ` · copy sighted by Aspex on ${dateOnly(a.sightedAt.slice(0, 10))}` : ' · not yet sighted by Aspex')}${a.authority ? ' · issued by ' + esc(a.authority) : ''}${a.heightFt ? ` · max ${esc(a.heightFt)} ft` : ''}${a.area ? ' · ' + esc(a.area) : ''}</div>
       ${a.conditions ? `<div style="white-space:pre-wrap;font-size:12.5px;margin-top:3px"><b>Conditions:</b> ${esc(a.conditions)}</div>` : ''}</td>
       <td>${esc(apDates(a))}${a.covers ? '' : ' <span class="pill bad">doesn’t cover the job dates</span>'}</td>
       <td>${a.docName ? `<a href="${a.from === 'Aspex' ? `api/aspex-jobs/${encodeURIComponent(j.key)}/approval/${encodeURIComponent(a.key)}/doc` : `api/approvals/${encodeURIComponent(a.key)}/doc`}" target="_blank" rel="noopener">📄 Document</a>` : '<span class="muted">no document</span>'}</td></tr>`).join('')
       || '<tr><td class="muted">No approvals linked yet.</td></tr>'}</table>
     <p style="margin:8px 0 0"><button class="btn sm ghost" data-ap-new>+ Add my own approval for this job</button>
-      <span class="muted" style="font-size:12px">If Aspex is arranging it, it'll appear here once it's in.</span></p></div>`;
+      <span class="muted" style="font-size:12px">If Aspex is arranging it, it'll appear here once it's in.</span></p>
+    ${list.some(a => a.from !== 'Aspex') ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Aspex records only that it has sighted a copy of your approval. Your operation and its approvals remain your responsibility as an independent operator.</p>' : ''}</div>`;
 }
 function bindAspexApprovals(card, j) {
   card.querySelector('[data-ap-new]')?.addEventListener('click', () => newApproval({ title: j.approvalNote || '', aspexJobs: j.key, validFrom: j.start || '', validTo: j.end || j.start || '' }));

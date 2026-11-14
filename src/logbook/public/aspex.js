@@ -150,10 +150,18 @@ async function renderJobNetwork(key) {
           <td>${(() => { const fl = p.flights.filter(f => f.check?.status === 'flag'), ck = p.flights.filter(f => f.check?.status === 'check');
             return fl.length || ck.length ? fl.map(f => `<span class="pill bad" title="${esc(f.check.issues.filter(i => !i.ok).map(i => i.text).join('; '))}">⚠ ${dateOnly(f.startLocal)} ${timeOnly(f.startLocal)}</span>`).concat(ck.map(f => `<span class="pill warn" title="${esc(f.check.issues.map(i => i.text).join('; '))}">Check ${dateOnly(f.startLocal)}</span>`)).join(' ')
               : p.flights.length ? '<span class="pill ok">✓ none</span>' : '–'; })()}</td>
-          <td>${(p.approvals || []).map(a => `${a.docName ? `<a href="api/jobs/${encodeURIComponent(key)}/network-approval/${p.uid}/${encodeURIComponent(a.key)}/doc" target="_blank" rel="noopener">📄 ${esc(a.title || a.type)}</a>` : esc(a.title || a.type)}${a.ref ? ' <span class="muted">' + esc(a.ref) + '</span>' : ''}${a.covers ? '' : ' <span class="pill bad">dates don’t cover the job</span>'}`).join('<br>') || '–'}</td>
+          <td>${(p.approvals || []).map(a => `${a.docName ? `<a href="api/jobs/${encodeURIComponent(key)}/network-approval/${p.uid}/${encodeURIComponent(a.key)}/doc" target="_blank" rel="noopener">📄 ${esc(a.title || a.type)}</a>` : esc(a.title || a.type)}${a.ref ? ' <span class="muted">' + esc(a.ref) + '</span>' : ''}${a.covers ? '' : ' <span class="pill bad">dates don’t cover the job</span>'}
+            <label style="display:block;font-size:12px;cursor:pointer" title="Records that Aspex received and looked at a copy, and when. It isn't a check that the approval is adequate - the operation stays the pilot's."><input type="checkbox" data-sight="${p.uid}|${esc(a.key)}"${a.sightedAt ? ' checked' : ''}> ${a.sightedAt ? 'Sighted ' + dateOnly(a.sightedAt.slice(0, 10)) : 'Sighted'}</label>`).join('<br>') || '–'}</td>
           <td>${p.progress.completeAt ? dateOnly(p.progress.completeAt) : '–'}</td></tr>`;
       }).join('') || '<tr><td colspan="10" class="muted">No pilots assigned on the pilot network job yet.</td></tr>'}</table>
       ${net.pilots.some(p => p.flights.length) ? '<div id="netMap" style="height:340px;border-radius:8px;margin-top:8px"></div><div class="muted" style="font-size:12px;margin-top:4px">Pilot flight routes on this job. Click a route for details.</div>' : ''}` : ''}`;
+  $('#jobNet').querySelectorAll('[data-sight]').forEach(c => c.onchange = async () => {
+    const [uid, ak] = c.dataset.sight.split('|');
+    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-approval/${uid}/${encodeURIComponent(ak)}/sighted`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: c.checked }) });
+    if (!r.ok) { c.checked = !c.checked; return toast('Couldn’t save that.'); }
+    const { sightedAt } = await r.json(); c.nextSibling.textContent = sightedAt ? ' Sighted ' + dateOnly(sightedAt.slice(0, 10)) : ' Sighted';
+    toast(sightedAt ? 'Recorded as sighted' : 'Sighted record removed');
+  });
   updateApWarn(j, key, net.pilots.reduce((n, p) => n + (p.approvals || []).filter(a => a.covers).length, 0));
   $('#nJob').onchange = async e => { await saveOps({ jobs: { [key]: { networkJobId: e.target.value } } }, e.target.value ? 'Shared with the pilot network job' : 'No longer shared'); renderJobNetwork(key); };
   el.querySelectorAll('[data-n]').forEach(x => x.onchange = () => saveOps({ jobs: { [key]: { [x.dataset.n]: x.value.trim() } } }));
