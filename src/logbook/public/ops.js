@@ -121,7 +121,13 @@ function renderJobEdit() {
       <label>Reference / PO<input data-f="ref" value="${esc(j.ref)}"></label>
       <label>${myRole === 'owner' ? 'Start (window opens)' : 'Start'}<input type="date" data-f="start" value="${esc(j.start)}"></label>
       <label>${myRole === 'owner' ? 'End (window closes)' : 'End'}<input type="date" data-f="end" value="${esc(j.end)}"></label>
-      <label class="full">Nature and purpose of operation<input data-f="purpose" value="${esc(j.purpose)}" placeholder="e.g. Aerial thermography of solar arrays"></label>
+      ${myRole === 'owner' ? `<label>Nearest town<input data-f="town" value="${esc(j.town)}" placeholder="e.g. Walla Walla"></label>
+      <label>State<select data-f="state">${sel(['NSW', 'QLD', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'].map(x => [x, x]), j.state || '', '—')}</select></label>
+      <label>Days needed on site<input data-f="daysNeeded" value="${esc(j.daysNeeded)}" placeholder="e.g. 2"></label>
+      <label>Day rate / pay (for pilots)<input data-f="payNotes" value="${esc(j.payNotes)}" placeholder="e.g. $800/day, accommodation paid"></label>
+      <label>Pilots to respond by<input type="date" data-f="respondBy" value="${esc(j.respondBy)}"></label>
+      <label class="full">Pilot requirements<input data-f="requirements" value="${esc(j.requirements)}" placeholder="e.g. Matrice 4T or Mavic 3T, White Card"></label>` : ''}
+      <label class="full">Nature and purpose of operation (sent to pilots as the type of work)<input data-f="purpose" value="${esc(j.purpose)}" placeholder="e.g. Aerial thermography of solar arrays"></label>
       <label>Flown under (ReOC / operator)<input data-f="operator" value="${esc(j.operator)}"></label>
       <label>Usual operation type<select data-f="opType">${sel(OP_TYPES.map(x => [x, x]), j.opType || 'VLOS')}</select></label>
       <label class="full">Dropbox folder<span>${link('dropboxUrl', 'paste the Dropbox folder link')}</span></label>
@@ -130,6 +136,7 @@ function renderJobEdit() {
     </div>
     <div class="sub2">${jobApprovalsSection(j, curJob)}</div>
     <div class="sub2">${safetyEditor(j, curJob)}</div>
+    <div class="sub2" id="jobNet"></div>
     <div class="sub2">
       <h4>Flights in this job — ${st.fl.length} flights, ${hrs(st.mins)} h</h4>
       <table>${sessions(st.fl).map(s => `<tr><td>${dateOnly(s.day)}</td><td>${sessLabel(s)}</td><td class="n">${s.flights.length} flights</td><td class="n">${hrs(s.mins)} h</td>
@@ -142,8 +149,7 @@ function renderJobEdit() {
           <td class="n"><button class="btn sm" data-add="${esc(s.key)}">Add to job</button></td></tr>`).join('') || '<tr><td class="muted">Nothing unassigned.</td></tr>';
       })()}</table>
     </div>
-    <div class="sub2"><h4>Map</h4><div id="jobMap" style="height:380px;border-radius:8px;overflow:hidden"></div><p class="muted" id="jobMapNote" style="margin-top:6px"></p></div>
-    <div class="sub2" id="jobNet"></div>`;
+    <div class="sub2"><h4>Map</h4><div id="jobMap" style="height:380px;border-radius:8px;overflow:hidden"></div><p class="muted" id="jobMapNote" style="margin-top:6px"></p></div>`;
   bindFields($('#jobEdit'), 'jobs', curJob);
   drawJobMap(j, st.fl);
   bindSafety($('#jobEdit'), curJob);

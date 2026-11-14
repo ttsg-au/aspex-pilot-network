@@ -131,16 +131,9 @@ async function renderJobNetwork(key) {
   const net = j.networkJobId ? await (await fetch(`api/jobs/${encodeURIComponent(key)}/network`)).json() : { pilots: [] };
   if (curJob !== key) return;
   const linked = j.networkJobId && netJobs.find(n => n.id === j.networkJobId);
-  const STATES = ['NSW', 'QLD', 'VIC', 'SA', 'WA', 'TAS', 'NT', 'ACT'];
   el.innerHTML = `<h4>Send to network pilots</h4>
     <div class="form" style="padding:0 0 10px">
-      <div class="muted" style="grid-column:1/-1">Everything about the job is set up here. <b>Send to pilots</b> opens the pilot list with the email written for you from this job, which you can edit before sending. Pilots reply from the email; click <b>Assign</b> for the ones you want, and they see this job in their logbook.</div>
-      <label>Nearest town<input data-n="town" value="${esc(j.town || '')}" placeholder="e.g. Walla Walla"></label>
-      <label>State<select data-n="state">${sel(STATES.map(x => [x, x]), j.state || '', '—')}</select></label>
-      <label>Days needed on site<input data-n="daysNeeded" value="${esc(j.daysNeeded || '')}" placeholder="e.g. 2 days"></label>
-      <label>Rate / pay<input data-n="payNotes" value="${esc(j.payNotes || '')}" placeholder="e.g. $800/day, accommodation paid"></label>
-      <label>Respond by<input type="date" data-n="respondBy" value="${esc(j.respondBy || '')}"></label>
-      <label class="full">Requirements<input data-n="requirements" value="${esc(j.requirements || '')}" placeholder="e.g. Matrice 4T or Mavic 3T, White Card"></label>
+      <div class="muted" style="grid-column:1/-1">The town, state, days needed, day rate, respond-by date and requirements are in the job details at the top. <b>Send to pilots</b> opens the pilot list with the email written from this job, which you can edit before sending. Click <b>Assign</b> for the pilots you want, and they see this job in their logbook.</div>
       <label class="full">Site SWMS (link to the document - applies to everyone on site)<span><div class="linkrow"><input data-n="swmsUrl" value="${esc(j.swmsUrl || '')}" placeholder="paste the SWMS link (e.g. Dropbox)"></div></span></label>
       <label class="full">Aspex capture settings for pilots<textarea data-n="capture" rows="3" placeholder="e.g. 70% forward / 30% side overlap, GSD 3.3 cm, terrain follow, max 6.7 m/s, irradiance over 600 W/m²">${esc(j.capture || '')}</textarea></label>
       <div class="full"><button class="btn" id="nSend">${j.networkJobId ? 'Send to more pilots / see replies' : 'Send to pilots'}</button></div>
