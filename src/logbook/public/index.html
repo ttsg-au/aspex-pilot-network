@@ -185,6 +185,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
   <span class="sub" id="sub"></span>
   <span id="who" style="color:#9fb3aa;font-size:12.5px;margin:0 10px 0 auto"></span><button class="btn" id="importBtn">⤓ Import flights</button>
   <label id="nfLabel" style="margin-left:14px"><input type="checkbox" id="showNf"> show motor starts with no take-off</label>
+  <label id="flagLabel" style="margin-left:14px"><input type="checkbox" id="onlyFlag"> only flights flagged for approvals</label>
 </header>
 
 <main>
@@ -295,6 +296,26 @@ async function load() {
   setOps(c);
   await loadMe();
   render(); renderInventory(); renderJobs(); renderSites();
+  loadChecks();
+}
+// Each flight checked against the approvals register (needs OpenAIP data, so it loads after the logbook).
+let checks = {}, checksAirspace = true;
+async function loadChecks() {
+  try { const r = await fetch('api/compliance').then(r => r.json()); checks = r.flights || {}; checksAirspace = r.airspace; renderFlights(); } catch {}
+}
+const CHECK_RANK = { flag: 0, check: 1, covered: 2, ok: 3 };
+function checkCell(f) {
+  const c = checks[f.sha256]; if (!c || c.status === 'ok') return '';
+  const tip = c.issues.map(i => (i.ok ? '✓ ' : '⚠ ') + i.text + (i.ok ? ' - covered by ' + i.by : '')).join('\n');
+  return c.status === 'flag' ? `<span class="pill bad" title="${esc(tip)}">⚠ Not covered</span>` : c.status === 'check' ? `<span class="pill warn" title="${esc(tip)}">Check</span>` : `<span class="pill ok" title="${esc(tip)}">✓ Approved</span>`;
+}
+function checkSection(f) {
+  const c = checks[f.sha256];
+  if (!f.isFlight) return '';
+  const note = `<div class="muted" style="font-size:12px;margin-top:4px">Checked from the take-off point and maximum height against your approvals register${checksAirspace ? ' and OpenAIP airspace data' : ' (airspace data couldn\'t be loaded, so only height was checked)'}. A preliminary check: confirm against official Airservices data.</div>`;
+  if (!c) return `<div class="muted">Not checked yet.</div>`;
+  if (c.status === 'ok') return `<div><span class="pill ok">✓ No approval needed</span> within 120 m, not in controlled or restricted airspace or near a controlled aerodrome.</div>${note}`;
+  return c.issues.map(i => `<div style="margin:3px 0">${i.ok ? '<span class="pill ok">✓</span>' : i.notam ? '<span class="pill warn">Check</span>' : '<span class="pill bad">⚠</span>'} ${esc(i.text)}${i.ok ? ` - covered by <b>${esc(i.by)}</b>` : i.notam ? '' : ' - <b>no approval in the register covers this</b>'}</div>`).join('') + note;
 }
 
 function render() {
@@ -372,7 +393,7 @@ function group(list, keyFn) {
 const COLS = [
   ['flightNo', 'Flight'], ['startLocal', 'Date'], ['startLocal', 'Take-off', 't'], ['endLocal', 'Landing', 't'],
   ['durationMin', 'Minutes', 'n'], ['aircraftModel', 'Aircraft'], ['batterySn', 'Battery'], ['batteryStartPct', 'Battery %', 'n'],
-  ['distanceKm', 'Distance km', 'n'], ['maxHeightM', 'Max height m', 'n'], ['photos', 'Photos', 'n'], ['_site', 'Site · Job'],
+  ['distanceKm', 'Distance km', 'n'], ['maxHeightM', 'Max height m', 'n'], ['photos', 'Photos', 'n'], ['_site', 'Site · Job'], ['_appr', 'Approval'],
 ];
 
 let acFilter = '';                                   // aircraft serial chosen in the Aircraft panel ('' = all)
@@ -380,13 +401,15 @@ function renderFlights() {
   const q = $('#q').value.trim().toLowerCase();
   let rows = all.filter(f => $('#showNf').checked || f.isFlight);
   if (acFilter) rows = rows.filter(f => (f.aircraftSn || '–') === acFilter);
+  if ($('#onlyFlag')?.checked) rows = rows.filter(f => ['flag', 'check'].includes(checks[f.sha256]?.status));
   const acf = all.find(f => (f.aircraftSn || '–') === acFilter);
   $('#acChip').innerHTML = acFilter ? `<span class="pill" style="cursor:pointer" id="acClear" title="Show all aircraft">Aircraft: ${esc(acf ? acLabel(acf) : acFilter)} ✕</span>` : '';
   if (acFilter) $('#acClear').onclick = () => { acFilter = ''; document.querySelectorAll('#aircraft tr.sel').forEach(x => x.classList.remove('sel')); renderFlights(); };
   if (q) rows = rows.filter(f => [siteJobText(f), f.flightNo, f.startLocal, dateOnly(f.startLocal), f.batterySn, batCode(f.batterySn), f.aircraftSn, acCode(f.aircraftSn), model(f.aircraftModel), f.file]
     .join(' ').toLowerCase().includes(q));
   rows.sort((a, b) => {
-    const x = sortKey === '_site' ? siteJobText(a) : a[sortKey] ?? '', y = sortKey === '_site' ? siteJobText(b) : b[sortKey] ?? '';
+    const k = f => sortKey === '_site' ? siteJobText(f) : sortKey === '_appr' ? CHECK_RANK[checks[f.sha256]?.status] ?? 4 : f[sortKey] ?? '';
+    const x = k(a), y = k(b);
     return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * sortDir;
   });
   $('#count').textContent = `${rows.length} shown · ${hrs(rows.filter(f => f.isFlight).reduce((s, f) => s + air(f), 0))} flight hours`;
@@ -397,7 +420,7 @@ function renderFlights() {
       <td>${dateOnly(f.startLocal)}</td><td>${timeOnly(f.startLocal)}</td><td>${timeOnly(f.endLocal)}</td>
       <td class="n">${num(air(f), 1)}</td><td>${esc(acLabel(f))}</td><td>${batCell(f.batterySn)}</td>
       <td class="n">${f.batteryStartPct != null ? `${f.batteryStartPct} → ${f.batteryEndPct}` : '–'}</td>
-      <td class="n">${num(f.distanceKm, 2)}</td><td class="n">${num(f.maxHeightM, 0)}</td><td class="n">${num(f.photos)}</td><td>${siteJobCell(f)}</td>
+      <td class="n">${num(f.distanceKm, 2)}</td><td class="n">${num(f.maxHeightM, 0)}</td><td class="n">${num(f.photos)}</td><td>${siteJobCell(f)}</td><td>${checkCell(f)}</td>
     </tr>`).join('') || `<tr><td colspan="${COLS.length}" class="empty">No flights match</td></tr>`);
   document.querySelectorAll('#flights th[data-k]').forEach(th => th.onclick = () => {
     if (sortKey === th.dataset.k) sortDir = -sortDir; else { sortKey = th.dataset.k; sortDir = th.classList.contains('n') ? -1 : 1; }
@@ -416,6 +439,8 @@ async function openFlight(f, tr) {
     <div class="actions">
       ${f.track === 'ok' ? `<a class="btn" href="kml/${encodeURIComponent(b)}.kml" title="Downloads the track - open the file to see it in Google Earth">Open in Google Earth (KML)</a>` : `<span class="pill warn">No GPS track: ${esc(f.track)}</span>`}
     </div>
+    <div class="section">Approvals check</div>
+    <div>${checkSection(f)}</div>
     <div class="section">Site & job</div>
     <div id="dAssign"></div>
     <div id="dCasa"></div>
@@ -479,8 +504,8 @@ async function saveField(el, { quiet = false } = {}) {
 function showView(v) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   for (const n of ['logbook', 'aspex', 'jobs', 'sites', 'approvals', 'inventory', 'reports', 'me']) $('#v-' + n).hidden = v !== n;
-  $('#nfLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
-  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'aspex') loadAspexJobs().then(renderAspex); if (v === 'me') renderMe(); if (v === 'jobs') renderJobs(); if (v === 'approvals') renderApprovals(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  $('#nfLabel').style.visibility = $('#flagLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
+  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'aspex') loadAspexJobs().then(renderAspex); if (v === 'me') renderMe(); if (v === 'logbook') loadChecks(); if (v === 'jobs') renderJobs(); if (v === 'approvals') renderApprovals(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
   if (v !== 'logbook') $('#dClose').click();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showView(b.dataset.v));
@@ -488,7 +513,7 @@ document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => show
 $('#dClose').onclick = () => { $('#drawer').classList.remove('open'); document.querySelectorAll('#flights tr.sel').forEach(x => x.classList.remove('sel')); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#dClose').click(); });
 $('#q').oninput = renderFlights;
-$('#showNf').onchange = render;
+$('#showNf').onchange = render; $('#onlyFlag').onchange = renderFlights;
 </script>
 <script src="inv.js"></script>
 <script src="ops.js"></script>

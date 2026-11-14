@@ -143,18 +143,19 @@ router.get('/logbook/api/aspex-jobs/:key/approval/:akey/doc', (req, res) => {   
 router.get('/logbook/api/network-jobs', ownerOnly, (req, res) => res.json({
   jobs: db.all('jobs').slice().sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || ''))).map(j => ({ id: j.id, title: j.title, startDate: j.startDate, status: j.status })),
 }));
-router.get('/logbook/api/jobs/:key/network', ownerOnly, (req, res) => {
+router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
   const x = linkedJobs().find(l => l.key === req.params.key);
   if (!x) return res.json({ pilots: [] });
   const ids = assignedPilotIds(x.job.networkJobId);
-  const pilots = [...ids].map(pid => {
+  const pilots = await Promise.all([...ids].map(async pid => {
     const p = db.get('pilots', pid) || {};
     const u = db.all('lbUsers').find(v => v.pilotId === pid && !v.disabled);
     const fl = u ? matchFlights(u.id, x.job, x.site) : [];
+    const chk = u && fl.length ? (await require('./compliance').checkFlights(u.id, fl, aspexApprovalsFor(u))).flights : {};
     return { pilotId: pid, name: p.fullName || '(deleted pilot)', uid: u?.id || '', hasLogbook: !!u, active: !!u?.pwHash,
-      progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(flightOut),
+      progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(f => ({ ...flightOut(f), check: chk[f.sha256] || null })),
       approvals: u ? pilotApprovals(u.id, x.key, x.job) : [] };
-  });
+  }));
   res.json({ pilots, basis: BASIS.independent.label });
 });
 router.get('/logbook/api/jobs/:key/network-track/:uid/:file', ownerOnly, async (req, res) => {
@@ -174,6 +175,12 @@ router.get('/logbook/api/jobs/:key/network-approval/:uid/:akey/doc', ownerOnly, 
   sendDoc(res, d && store.keysOf(d.item.aspexJobs).includes(x.key) ? d.item : null);
 });
 
+// Aspex's approvals linked to the Aspex jobs a pilot is on (for checking that pilot's flights).
+function aspexApprovalsFor(u) {
+  const o = owner(); if (!o) return [];
+  const oo = store.ops(o.id), keys = new Set(jobsFor(u).map(j => j.key));
+  return Object.entries(oo.approvals).filter(([, a]) => store.keysOf(a.jobs).some(k => keys.has(k))).map(([key, a]) => ({ key, a, ops: oo }));
+}
 // All the approvals assigned pilots have linked to one of the owner's jobs.
 function pilotApprovalsForJob(key) {
   const x = linkedJobs().find(l => l.key === key); if (!x) return [];
@@ -181,4 +188,4 @@ function pilotApprovalsForJob(key) {
   return db.all('lbUsers').filter(u => ids.has(u.pilotId) && !u.disabled).flatMap(u => pilotApprovals(u.id, key, x.job));
 }
 
-module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob };
+module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor };

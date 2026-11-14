@@ -39,6 +39,14 @@ router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|controlled\.cjs|ops\.js|inv\.js|casa\
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)
   .sort((a, b) => (a.startUtc || '').localeCompare(b.startUtc || '')).map(store.publicFlight) }));
+router.get('/logbook/api/compliance', async (req, res) => {   // each flight checked against the approvals register
+  const u = req.lb, extra = u.role === 'owner' ? [] : require('./network').aspexApprovalsFor(u);
+  res.json(await require('./compliance').checkFlights(u.id, store.flights(u.id), extra));
+});
+router.get('/logbook/api/towercheck', (req, res) => {
+  if (req.lb.role !== 'owner') return res.status(403).end();
+  res.json(store.state('towercheck', 'all', {}));
+});
 router.get('/logbook/api/inventory', (req, res) => res.json(store.inventory(req.lb.id)));
 router.post('/logbook/api/inventory', (req, res) => res.json(store.saveInventory(req.lb.id, req.body || {})));
 router.get('/logbook/api/ops', (req, res) => res.json(store.ops(req.lb.id)));

@@ -220,4 +220,4 @@ async function nearestPlace(lat, lon) {
   return name;
 }
 
-module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace, towerCheck, startTowerCheck };
+module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace, towerCheck, startTowerCheck, oaipExport, lim };

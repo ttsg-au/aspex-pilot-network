@@ -342,6 +342,18 @@ function renderSiteList() {
     <div class="s">${s.areaHa ? num(s.areaHa, 1) + ' ha' : s.boundary ? 'approximate boundary' : 'no boundary yet'} · ${counts[id] || 0} flights${s.airspace ? ' · airspace checked' : ''}</div></div>`).join('')
     || '<div class="empty">No sites yet</div>';
   $('#siteList').querySelectorAll('.it').forEach(el => el.onclick = () => { curSite = el.dataset.id; renderSites(); });
+  if (myRole === 'owner') towerStatus();
+}
+// Owner only: when the monthly controlled-aerodrome comparison last ran and what it found.
+let towerShown = false;
+async function towerStatus() {
+  let el = $('#towerStatus');
+  if (!el) { el = document.createElement('div'); el.id = 'towerStatus'; el.style.cssText = 'padding:8px 14px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)'; $('#siteList').after(el); }
+  if (towerShown) return; towerShown = true;
+  const t = await fetch('api/towercheck').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+  el.innerHTML = !t.at ? 'Controlled aerodrome check: not run yet (it runs a few minutes after the app starts, then monthly).'
+    : `Controlled aerodrome check: last run ${new Date(t.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}, `
+      + (t.diffs?.length ? `<b style="color:#7a1810">${t.diffs.length} difference${t.diffs.length === 1 ? '' : 's'} to check</b> (emailed to you):<ul style="margin:4px 0 0 16px;padding:0">${t.diffs.map(d => `<li>${esc(d)}</li>`).join('')}</ul>` : '<b style="color:#0b4d3f">no differences found</b>.');
 }
 const ASP_TYPE = { 0: 'Other', 1: 'Restricted', 2: 'Danger', 3: 'Prohibited', 4: 'CTR', 5: 'TMZ', 6: 'RMZ', 7: 'TMA', 8: 'TRA', 9: 'TSA', 13: 'ATZ / CTAF area', 14: 'MATZ',
   17: 'Alert', 18: 'Warning', 19: 'Protected', 21: 'Gliding', 25: 'MTA', 26: 'CTA', 28: 'Sport/rec activity', 29: 'Low overflight restriction', 31: 'TFR', 36: 'MCTR' };
