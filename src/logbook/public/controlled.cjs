@@ -13,20 +13,27 @@ const Controlled = (() => {
     ...'YAMB Amberley,YPDN Darwin,YBTL Townsville,YWLM Williamtown,YSRI Richmond,YSNW Nowra,YMES East Sale,YPED Edinburgh,YPEA Pearce,YPTN Tindal,YBOK Oakey,YPLM Learmonth,YBSG Scherger,YCIN Curtin'
       .split(',').map(x => [x.slice(0, 4), { name: x.slice(5), by: 'military tower' }]),
   ]);
+  // Military bare bases: their control zone exists only when activated by NOTAM, so OpenAIP may not show one.
+  const NOTAM_ONLY = new Set(['YCIN', 'YBSG', 'YPLM']);
   const CTR_TYPES = new Set([4, 36]);                 // OpenAIP: CTR, military CTR
   const isCtr = (a) => CTR_TYPES.has(Number(a.type));
+  const fromSurface = (a) => { const l = a.lower || {}; return l.unit !== 6 && Number(l.value) === 0; };
+  // Controlled airspace starting at the surface: a control zone, or class A-D from the ground.
+  const isControlledSfc = (a) => isCtr(a) || (Number(a.icaoClass) >= 0 && Number(a.icaoClass) <= 3 && fromSurface(a));
+  // Military aerodromes' airspace is often published as a restricted area from the ground.
+  const isRestrictedSfc = (a) => [1, 3].includes(Number(a.type)) && fromSurface(a);
   // Is this aerodrome controlled? -> { by: 'Airservices tower' | 'military tower' | 'inside <name> control zone' } or null.
   // airport: { icao, coords:[lon,lat] }; airspaces: [{ type, name, geometry }] (OpenAIP)
   function check(airport, airspaces, Geo) {
     const hit = LIST[String(airport.icao || '').toUpperCase()];
     if (hit) return { by: hit.by };
     if (airport.coords) for (const a of airspaces || []) {
-      if (!isCtr(a) || !a.geometry) continue;
+      if (!isControlledSfc(a) || !a.geometry) continue;
       const polys = Geo.fromGeoJSON(a.geometry);
-      if (polys.length && Geo.inPolys(airport.coords, polys)) return { by: `OpenAIP shows it inside a control zone${a.name ? ", " + a.name : ""}` };
+      if (polys.length && Geo.inPolys(airport.coords, polys)) return { by: `OpenAIP shows it inside controlled airspace from the ground${a.name ? ', ' + a.name : ''}` };
     }
     return null;
   }
-  return { LIST, isCtr, check };
+  return { LIST, NOTAM_ONLY, isCtr, isControlledSfc, isRestrictedSfc, check };
 })();
 if (typeof module !== 'undefined') module.exports = Controlled;

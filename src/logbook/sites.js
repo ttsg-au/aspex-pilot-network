@@ -120,29 +120,38 @@ const Controlled = require('./public/controlled.cjs');
 async function towerCheck({ force = false } = {}) {
   const db = require('../db'), mail = require('../mail');
   const last = store.state('towercheck', 'all', {});
-  if (!force && last.at && Date.now() - Date.parse(last.at) < 30 * 864e5) return last;
+  const V = 2;                                                       // bump when the comparison changes, so it re-runs
+  if (!force && last.v === V && last.at && Date.now() - Date.parse(last.at) < 30 * 864e5) return last;
   const [asp, apt] = await Promise.all([oaipExport('asp'), oaipExport('apt')]);              // the 30-day copy, refreshed when older
   const airports = apt.gj.features.filter(f => f.geometry?.type === 'Point' && /^Y[A-Z]{3}$/.test(f.properties?.icaoCode || ''))
     .map(f => ({ icao: f.properties.icaoCode, name: String(f.properties.name || ''), pt: f.geometry.coordinates }));
   const known = new Set(airports.map(a => a.icao));
-  const ctrOf = {};                                                   // icao -> control zone name
-  for (const f of asp.gj.features) {
-    if (!Controlled.isCtr(f.properties || {}) || !f.geometry) continue;
-    const polys = Geo.fromGeoJSON(f.geometry); if (!polys.length) continue;
-    const name = String(f.properties.name || ''), inside = airports.filter(a => Geo.inPolys(a.pt, polys));
-    if (!inside.length) continue;
-    const word = (s) => (s.toUpperCase().match(/[A-Z]{3,}/) || [''])[0];
-    const [cy, cx] = Geo.centroid(polys), d2 = (a) => (a.pt[0] - cx) ** 2 + (a.pt[1] - cy) ** 2;
-    const own = inside.find(a => word(a.name) && name.toUpperCase().includes(word(a.name))) || inside.sort((a, b) => d2(a) - d2(b))[0];
-    ctrOf[own.icao] ||= name;
+  const zones = asp.gj.features.filter(f => f.geometry).map(f => { const P = f.properties || {};
+    return { name: String(P.name || ''), type: Number(P.type), icaoClass: Number(P.icaoClass ?? 8), lower: lim(P.lowerLimit ?? P.lower_limit), polys: Geo.fromGeoJSON(f.geometry) };
+  }).filter(z => z.polys.length);
+  const ctrl = zones.filter(Controlled.isControlledSfc), cover = zones.filter(z => Controlled.isControlledSfc(z) || Controlled.isRestrictedSfc(z));
+  const word = (s) => (s.toUpperCase().match(/[A-Z]{3,}/) || [''])[0];
+  // A control zone with no listed tower aerodrome inside it may mean a new tower: name its likely aerodrome.
+  const notOnList = [], seen = new Set();
+  for (const z of zones.filter(Controlled.isCtr)) {
+    const inside = airports.filter(a => Geo.inPolys(a.pt, z.polys));
+    if (!inside.length || inside.some(a => Controlled.LIST[a.icao])) continue;
+    const [cy, cx] = Geo.centroid(z.polys), d2 = (a) => (a.pt[0] - cx) ** 2 + (a.pt[1] - cy) ** 2;
+    const own = inside.find(a => word(a.name) && z.name.toUpperCase().includes(word(a.name))) || inside.sort((a, b) => d2(a) - d2(b))[0];
+    if (seen.has(own.icao)) continue; seen.add(own.icao);
+    notOnList.push(`${own.icao} ${own.name} - OpenAIP has a control zone (${z.name}), but it isn't on the tower list`);
   }
-  const notOnList = Object.entries(ctrOf).filter(([k]) => !Controlled.LIST[k]).map(([k, n]) => `${k} - OpenAIP has a control zone (${n}), but it isn't on the tower list`);
-  const noZone = Object.entries(Controlled.LIST).filter(([k]) => !ctrOf[k]).map(([k, v]) => known.has(k)
-    ? `${k} ${v.name} (${v.by}) - on the tower list, but OpenAIP has no control zone for it`
-    : `${k} ${v.name} (${v.by}) - on the tower list, but not in OpenAIP's aerodrome data`);
+  // A listed tower aerodrome with no controlled (or, for military, restricted) airspace over it from the ground.
+  const noZone = Object.entries(Controlled.LIST).filter(([k]) => !Controlled.NOTAM_ONLY.has(k)).flatMap(([k, v]) => {
+    const a = airports.find(x => x.icao === k);
+    if (!a) return [`${k} ${v.name} (${v.by}) - on the tower list, but not in OpenAIP's aerodrome data`];
+    const zs = v.by === 'military tower' ? cover : ctrl;
+    return zs.some(z => Geo.inPolys(a.pt, z.polys)) ? [] : [`${k} ${v.name} (${v.by}) - on the tower list, but OpenAIP has no controlled airspace from the ground over it`];
+  });
+  const zoneCount = ctrl.length;
   const diffs = [...notOnList, ...noZone].sort();
   const sig = diffs.join('|');
-  const out = { at: new Date().toISOString(), zones: Object.keys(ctrOf).length, diffs, emailedSig: last.emailedSig || '' };
+  const out = { v: V, at: new Date().toISOString(), zones: zoneCount, diffs, emailedSig: last.emailedSig || '' };
   if (diffs.length && sig !== last.emailedSig) {
     const owner = db.all('lbUsers').find(u => u.role === 'owner');
     try {
