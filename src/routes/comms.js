@@ -366,8 +366,9 @@ ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.p
 
 <section class="card" id="invite"><h2>Send this job to pilots</h2>
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
+${!preIds.length && ((!('state' in req.query) && j.state) || (!('part' in req.query) && j.part !== 'any')) ? `<p class="sub">Showing only ${[!('state' in req.query) && j.state ? esc(j.state) : '', !('part' in req.query) && j.part !== 'any' ? 'Part ' + esc(j.part) : ''].filter(Boolean).join(', ')} pilots, to match the job. <a href="/jobs/${j.id}?state=&part=#invite">Show all pilots</a></p>` : ''}
 <form method="post" action="/jobs/${j.id}/send">
-<div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag && (preIds.length || !invited.has(p.id)) ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
+<div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
 ${candidates.some(p => !M.agreementOf(p)) ? '<p class="sub">Pilots without a signed agreement are left unticked. You can still tick them to let them know about the job, but they can’t be assigned until they’ve signed.</p>' : ''}
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
 <label>Message (the job details are added below it, then “I'm interested” and “Not available” buttons)<textarea name="intro" rows="5">Hi {first_name},

@@ -114,6 +114,17 @@ function readiness(p) {
 }
 
 // Filters used on the pilot list and when choosing who to message.
+// Drone names arrive in many spellings ("DJI Matrice 4T", "M4T", "Mavic 3 Thermal"), in the ticked
+// list or typed under "Other", so compare loosely rather than exactly.
+const droneKey = (s) => String(s || '').toLowerCase().replace(/\bdji\b/g, '').replace(/thermal/g, 't').replace(/enterprise/g, 'e').replace(/[^a-z0-9]/g, '');
+const DRONE_ALIASES = { mavic3t: ['m3t', 'mavic3t'], mavic3e: ['m3e', 'mavic3e'], matrice4t: ['m4t', 'matrice4t', 'm4td', 'matrice4td'], matrice4e: ['m4e', 'matrice4e'] };
+function hasDrone(p, option) {
+  if (option === 'Other') return !!p.dronesOther;
+  const want = DRONE_ALIASES[droneKey(option)] || [droneKey(option)];
+  return [...(p.drones || []), ...String(p.dronesOther || '').split(/[,;\n/]+| and /)]
+    .some(d => { const k = droneKey(d); return k && want.some(w => k === w || k.includes(w)); });
+}
+
 function filterPilots(q = {}) {
   let list = db.all('pilots').slice();
   const text = (q.q || '').trim().toLowerCase();
@@ -125,7 +136,7 @@ function filterPilots(q = {}) {
   if (q.part === 'A') list = list.filter(p => p.partA);
   if (q.part === 'B') list = list.filter(p => p.partB);
   if (q.qual) list = list.filter(p => qualsFor(p.id).some(x => x.type === q.qual && expiryStatus(x) !== 'expired'));
-  if (q.drone) list = list.filter(p => (p.drones || []).includes(q.drone) || (q.drone === 'Other' && p.dronesOther));
+  if (q.drone) list = list.filter(p => hasDrone(p, q.drone));
   if (q.travel) list = list.filter(p => p.travel === q.travel);
   if (q.agreement === 'yes') list = list.filter(p => agreementOf(p));
   if (q.agreement === 'no') list = list.filter(p => !agreementOf(p));
