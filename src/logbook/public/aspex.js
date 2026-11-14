@@ -70,6 +70,7 @@ function renderAspex() {
       <div style="padding:12px 14px">
         <div class="basis"><b>Operating basis: ${esc(j.basis.label)}.</b> ${esc(j.basis.text)}</div>
         ${safetyView(j)}
+        ${aspexApprovalsView(j)}
         ${acked ? `<p class="muted" style="margin:8px 0 0">You accepted this on ${dateOnly(p.ackAt)}.</p>` : `
           <div class="acks">${j.basis.acks.map((a, k) => `<label><input type="checkbox" data-ack="${k}"> ${esc(a)}</label>`).join('')}</div>
           ${j.swmsUrl ? `<p><a class="btn sm ghost" href="${esc(j.swmsUrl)}" target="_blank" rel="noopener">Open the site SWMS</a></p>` : '<p class="pill warn">The SWMS hasn’t been attached yet - Aspex will add it.</p>'}
@@ -95,6 +96,7 @@ function renderAspex() {
 
   v.querySelectorAll('.aj').forEach(card => {
     const j = aspexJobs[card.dataset.i], url = 'api/aspex-jobs/' + encodeURIComponent(j.key);
+    bindAspexApprovals(card, j);
     card.querySelector('[data-accept]')?.addEventListener('click', async () => {
       const ticks = [...card.querySelectorAll('[data-ack]')].map(c => c.checked);
       const r = await post(url + '/ack', { ticks });
@@ -127,16 +129,19 @@ async function renderJobNetwork(key) {
       <div class="muted" style="grid-column:1/-1">Operating basis: <b>Independent operator</b> - pilots fly under their own accreditation and their own checklists; the work isn't carried out under an Aspex ReOC. They must accept this, and the SWMS, before the job opens for them.<br>
         <b>What pilots see:</b> job name, dates, site name and boundary, the Dropbox folder, the SWMS and these capture settings. <b>Never shown:</b> the client, reference/PO, SiteMark link, site owner/O&amp;M, notes and your own flights.</div>
     </div>
-    ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Complete</th></tr>
+    ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Their approvals</th><th>Complete</th></tr>
       ${net.pilots.map(p => {
         const d = p.flights.filter(f => f.serviceable === 'no');
         return `<tr><td>${esc(p.name)}</td><td>${p.hasLogbook ? (p.active ? 'Yes' : 'Invited') : '<span class="muted">No account - give logbook access from their pilot page</span>'}</td>
           <td>${p.progress.ackAt ? dateOnly(p.progress.ackAt) : '<span class="pill warn">Not yet</span>'}</td>
           <td>${Object.keys(p.progress.days || {}).sort().map(dateOnly).join(', ') || '–'}</td>
           <td class="n">${p.flights.length}</td><td class="n">${hrs(p.flights.reduce((s, f) => s + (f.durationMin || 0), 0))}</td>
-          <td>${d.map(f => esc(f.defect || 'defect')).join('; ') || '–'}</td><td>${p.progress.completeAt ? dateOnly(p.progress.completeAt) : '–'}</td></tr>`;
-      }).join('') || '<tr><td colspan="8" class="muted">No pilots assigned on the pilot network job yet.</td></tr>'}</table>
+          <td>${d.map(f => esc(f.defect || 'defect')).join('; ') || '–'}</td>
+          <td>${(p.approvals || []).map(a => `${a.docName ? `<a href="api/jobs/${encodeURIComponent(key)}/network-approval/${p.uid}/${encodeURIComponent(a.key)}/doc" target="_blank" rel="noopener">📄 ${esc(a.title || a.type)}</a>` : esc(a.title || a.type)}${a.ref ? ' <span class="muted">' + esc(a.ref) + '</span>' : ''}${a.covers ? '' : ' <span class="pill bad">dates don’t cover the job</span>'}`).join('<br>') || '–'}</td>
+          <td>${p.progress.completeAt ? dateOnly(p.progress.completeAt) : '–'}</td></tr>`;
+      }).join('') || '<tr><td colspan="9" class="muted">No pilots assigned on the pilot network job yet.</td></tr>'}</table>
       ${net.pilots.some(p => p.flights.length) ? '<div id="netMap" style="height:340px;border-radius:8px;margin-top:8px"></div><div class="muted" style="font-size:12px;margin-top:4px">Pilot flight routes on this job. Click a route for details.</div>' : ''}` : ''}`;
+  updateApWarn(j, key, net.pilots.reduce((n, p) => n + (p.approvals || []).filter(a => a.covers).length, 0));
   $('#nJob').onchange = async e => { await saveOps({ jobs: { [key]: { networkJobId: e.target.value } } }, e.target.value ? 'Shared with the pilot network job' : 'No longer shared'); renderJobNetwork(key); };
   el.querySelectorAll('[data-n]').forEach(x => x.onchange = () => saveOps({ jobs: { [key]: { [x.dataset.n]: x.value.trim() } } }));
 

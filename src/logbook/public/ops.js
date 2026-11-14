@@ -15,7 +15,7 @@ const jobOf = f => ops.flightJob[f.sha256] || '';
 const dayOf = f => (f.startLocal || '').slice(0, 10);
 
 function setOps(o) {
-  ops = o; for (const k of ['clients', 'sites', 'jobs', 'maint', 'flightJob']) ops[k] ||= {};
+  ops = o; for (const k of ['clients', 'sites', 'jobs', 'maint', 'approvals', 'flightJob']) ops[k] ||= {};
   computeMatches();
 }
 // each flight belongs to the nearest site whose boundary (plus margin) contains its take-off point
@@ -128,6 +128,7 @@ function renderJobEdit() {
       <label class="full">SiteMark project<span>${link('sitemarkUrl', 'paste the SiteMark link')}</span></label>
       <label class="full">Notes<textarea data-f="notes">${esc(j.notes)}</textarea></label>
     </div>
+    <div class="sub2">${jobApprovalsSection(j, curJob)}</div>
     <div class="sub2">${safetyEditor(j, curJob)}</div>
     <div class="sub2">
       <h4>Flights in this job — ${st.fl.length} flights, ${hrs(st.mins)} h</h4>
@@ -146,6 +147,7 @@ function renderJobEdit() {
   bindFields($('#jobEdit'), 'jobs', curJob);
   drawJobMap(j, st.fl);
   bindSafety($('#jobEdit'), curJob);
+  bindJobApprovals($('#jobEdit'), j, curJob);
   renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {

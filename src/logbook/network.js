@@ -49,6 +49,22 @@ const setProgress = (uid, v) => store.setState('aspexjobs', uid, v);
 const flightOut = (f) => ({ sha256: f.sha256, file: f.file, flightNo: f.flightNo, startLocal: f.startLocal, endLocal: f.endLocal, durationMin: f.durationMin,
   aircraftModel: f.aircraftModel, aircraftSn: f.aircraftSn, batterySn: f.batterySn, maxHeightM: f.maxHeightM, distanceKm: f.distanceKm,
   track: f.track, pic: f.pic, opType: f.opType, serviceable: f.serviceable, defect: f.defect, takeoffLat: f.takeoffLat, takeoffLon: f.takeoffLon });
+// Approvals linked to a job: the summary others may see (no private notes), and the document.
+const approvalOut = (key, a, from, job) => ({ key, from, type: a.type, title: a.title, authority: a.authority, ref: a.ref,
+  validFrom: a.validFrom, validTo: a.validTo, area: a.area, heightFt: a.heightFt, conditions: a.conditions,
+  docName: a.docFile ? a.docName : '', covers: store.covers(a, job || {}) });
+const ownerApprovals = (key, job) => { const o = owner(); if (!o) return [];
+  return Object.entries(store.ops(o.id).approvals).filter(([, a]) => store.keysOf(a.jobs).includes(key)).map(([k, a]) => approvalOut(k, a, 'Aspex', job)); };
+const pilotApprovals = (uid, key, job) => Object.entries(store.ops(uid).approvals)
+  .filter(([, a]) => store.keysOf(a.aspexJobs).includes(key)).map(([k, a]) => approvalOut(k, a, 'pilot', job));
+const DOC_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+async function sendDoc(res, item) {
+  const file = item?.docFile && await db.readFile(item.docFile);
+  if (!file) return res.status(404).type('text').send('No document attached.');
+  const name = String(item.docName || 'approval').replace(/["\r\n]/g, '');
+  res.type(file.mime || DOC_TYPES[name.split('.').pop().toLowerCase()] || 'application/octet-stream')
+    .set('Content-Disposition', `inline; filename="${name}"`).send(file.content);
+}
 const siteOut = (s) => s && { name: s.name, areaHa: s.areaHa, centroid: s.centroid, boundary: s.boundary };
 
 // Jobs a pilot (logbook user) has been assigned to.
@@ -59,6 +75,8 @@ function jobsFor(u) {
     key, name: job.name, start: job.start, end: job.end, status: job.status,   // no client, ref, SiteMark link or notes
     dropboxUrl: job.dropboxUrl, swmsUrl: job.swmsUrl, capture: job.capture, basis: BASIS.independent,
     siteContactName: job.siteContactName, siteContactPhone: job.siteContactPhone, safety: job.safety, safetyNotes: job.safetyNotes,
+    approvalRequired: job.approvalRequired === '1', approvalNote: job.approvalNote || '',
+    approvals: [...ownerApprovals(key, job), ...pilotApprovals(u.id, key, job)],
     site: siteOut(site), progress: prog[key] || {},
     flights: matchFlights(u.id, job, site).map(flightOut),
   }));
@@ -115,6 +133,12 @@ router.get('/logbook/api/aspex-jobs/:key/track/:file', async (req, res) => {
   file ? res.type('application/geo+json').send(file.content) : res.status(404).end();
 });
 
+router.get('/logbook/api/aspex-jobs/:key/approval/:akey/doc', (req, res) => {   // an Aspex approval for this job
+  const j = myJob(req, res); if (!j) return;
+  const a = j.approvals.find(x => x.from === 'Aspex' && x.key === req.params.akey);
+  sendDoc(res, a && store.opsDoc(owner().id, 'approvals', a.key)?.item);
+});
+
 // ---- owner side ----
 router.get('/logbook/api/network-jobs', ownerOnly, (req, res) => res.json({
   jobs: db.all('jobs').slice().sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || ''))).map(j => ({ id: j.id, title: j.title, startDate: j.startDate, status: j.status })),
@@ -128,7 +152,8 @@ router.get('/logbook/api/jobs/:key/network', ownerOnly, (req, res) => {
     const u = db.all('lbUsers').find(v => v.pilotId === pid && !v.disabled);
     const fl = u ? matchFlights(u.id, x.job, x.site) : [];
     return { pilotId: pid, name: p.fullName || '(deleted pilot)', uid: u?.id || '', hasLogbook: !!u, active: !!u?.pwHash,
-      progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(flightOut) };
+      progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(flightOut),
+      approvals: u ? pilotApprovals(u.id, x.key, x.job) : [] };
   });
   res.json({ pilots, basis: BASIS.independent.label });
 });
@@ -141,4 +166,19 @@ router.get('/logbook/api/jobs/:key/network-track/:uid/:file', ownerOnly, async (
   file ? res.type('application/geo+json').send(file.content) : res.status(404).end();
 });
 
-module.exports = { router, BASIS };
+router.get('/logbook/api/jobs/:key/network-approval/:uid/:akey/doc', ownerOnly, (req, res) => {   // a pilot's own approval for the job
+  const x = linkedJobs().find(l => l.key === req.params.key);
+  const u = x && db.get('lbUsers', req.params.uid);
+  if (!u || !assignedPilotIds(x.job.networkJobId).has(u.pilotId)) return res.status(404).end();
+  const d = store.safeKey(req.params.akey) && store.opsDoc(u.id, 'approvals', req.params.akey);
+  sendDoc(res, d && store.keysOf(d.item.aspexJobs).includes(x.key) ? d.item : null);
+});
+
+// All the approvals assigned pilots have linked to one of the owner's jobs.
+function pilotApprovalsForJob(key) {
+  const x = linkedJobs().find(l => l.key === key); if (!x) return [];
+  const ids = assignedPilotIds(x.job.networkJobId);
+  return db.all('lbUsers').filter(u => ids.has(u.pilotId) && !u.disabled).flatMap(u => pilotApprovals(u.id, key, x.job));
+}
+
+module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob };

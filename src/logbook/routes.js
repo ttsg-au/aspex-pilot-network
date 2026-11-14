@@ -25,6 +25,7 @@ const raw = (limit) => [express.raw({ type: () => true, limit }),
   (req, res, next) => Buffer.isBuffer(req.body) ? next() : fail(res, 'Send the file as raw data (Content-Type: application/octet-stream).')];
 const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e?.message || e));
 
+const { sendDoc } = require('./network');
 router.use(require('./network').router);                          // Aspex jobs shared with network pilots
 
 // ---------- pages ----------
@@ -33,7 +34,7 @@ router.get('/logbook', (req, res) => req.originalUrl.split('?')[0].endsWith('/')
   ? res.type('html').set('Cache-Control', 'no-store').send(fs.readFileSync(path.join(PUB, 'index.html'), 'utf8').replace(/\.(cjs|js)"><\/script>/g, `.$1?v=${VERSION}"></script>`))
   : res.redirect('/logbook/'));
 router.get('/logbook/help', (req, res) => res.type('html').set('Cache-Control', 'no-cache').send(fs.readFileSync(path.join(PUB, 'help.html'))));
-router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
+router.get(/^\/logbook\/(geo\.cjs|bb3\.cjs|ops\.js|inv\.js|casa\.js|aspex\.js|approvals\.js)$/, (req, res) => res.type('text/javascript').set('Cache-Control', 'public, max-age=31536000, immutable').send(fs.readFileSync(path.join(PUB, req.params[0]))));
 
 // ---------- data ----------
 router.get('/logbook/api/logbook', (req, res) => res.json({ flights: store.flights(req.lb.id)
@@ -42,6 +43,36 @@ router.get('/logbook/api/inventory', (req, res) => res.json(store.inventory(req.
 router.post('/logbook/api/inventory', (req, res) => res.json(store.saveInventory(req.lb.id, req.body || {})));
 router.get('/logbook/api/ops', (req, res) => res.json(store.ops(req.lb.id)));
 router.post('/logbook/api/ops', express.json({ limit: '2mb' }), (req, res) => res.json(store.saveOps(req.lb.id, req.body || {})));
+// ---- approval documents (the PDF or image of the approval itself) ----
+const DOC_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
+router.post('/logbook/api/approvals/:key/doc', raw('15mb'), async (req, res) => {
+  const key = store.safeKey(req.params.key), d = key && store.opsDoc(req.lb.id, 'approvals', key);
+  if (!d) return fail(res, 'Save the approval first.', 404);
+  const name = String(req.query.name || 'approval.pdf').replace(/[^\w .()-]/g, '_').slice(0, 200);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  if (!DOC_TYPES[ext]) return fail(res, 'Attach a PDF, or a photo (JPG or PNG) of the approval.');
+  if (!req.body.length) return fail(res, 'That file is empty.');
+  const item = { ...d.item };
+  if (item.docFile) db.deleteFile(item.docFile);
+  item.docFile = await db.saveFile(req.body, name, DOC_TYPES[ext]);
+  item.docName = name; item.docBytes = req.body.length;
+  store.putOps(req.lb.id, 'approvals', key, item);
+  res.json(store.ops(req.lb.id));
+});
+router.delete('/logbook/api/approvals/:key/doc', (req, res) => {
+  const key = store.safeKey(req.params.key), d = key && store.opsDoc(req.lb.id, 'approvals', key);
+  if (!d) return fail(res, 'no such approval', 404);
+  const item = { ...d.item };
+  if (item.docFile) db.deleteFile(item.docFile);
+  delete item.docFile; delete item.docName; delete item.docBytes;
+  store.putOps(req.lb.id, 'approvals', key, item);
+  res.json(store.ops(req.lb.id));
+});
+router.get('/logbook/api/approvals/:key/doc', (req, res) => {
+  const key = store.safeKey(req.params.key);
+  sendDoc(res, key && store.opsDoc(req.lb.id, 'approvals', key)?.item);
+});
+
 router.post('/logbook/api/flights/:sha', (req, res) => {          // CASA fields and notes on one flight
   const f = store.flightBySha(req.lb.id, req.params.sha);
   if (!f) return fail(res, 'no such flight', 404);

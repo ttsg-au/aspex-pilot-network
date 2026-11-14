@@ -83,7 +83,7 @@ function renderMe() {
       <button class="btn sm ghost" id="remSend" style="margin-top:8px">Email me this now</button></div>
     <div class="note">Totals in this logbook: ${num(flights.length)} flights, ${hrs(mins)} hours, of which ${hrs(flights.reduce((s, f) => s + nightMin(f), 0))} h at night. Flights where you set someone else as pilot in command are not counted in your remote pilot log.</div></div>`;
   fetch('api/reminders').then(r => r.json()).then(it => {
-    const all3 = [['Licences and paperwork', it.paperwork], ['Drones', it.drones], ['Batteries', it.batteries]].filter(x => x[1].length);
+    const all3 = [['Licences and paperwork', it.paperwork], ['Approvals', it.approvals || []], ['Drones', it.drones], ['Batteries', it.batteries]].filter(x => x[1].length);
     $('#remList').innerHTML = all3.length ? all3.map(([t, l]) => `<div style="margin-top:6px"><b style="color:var(--ink)">${t}</b>${l.map(x => `<div>${x.level === 'red' ? '🔴' : '🟠'} ${esc(x.text)}</div>`).join('')}</div>`).join('') : 'Nothing due - no email this week.';
   }).catch(() => { $('#remList').textContent = ''; });
   $('#remSend').onclick = async () => {

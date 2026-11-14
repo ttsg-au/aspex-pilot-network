@@ -128,16 +128,26 @@ const OPS_FIELDS = {
   jobs: { name: 160, clientId: 48, siteId: 48, status: 30, ref: 80, purpose: 200, operator: 160, opType: 10,
     dropboxUrl: 600, sitemarkUrl: 600, start: 10, end: 10, notes: 4000,
     networkJobId: 40, swmsUrl: 600, capture: 3000,
-    siteContactName: 120, siteContactPhone: 40, safety: 1000, safetyNotes: 2000 },   // site safety requirements + O&M contact   // shared with network pilots (network.js)
+    siteContactName: 120, siteContactPhone: 40, safety: 1000, safetyNotes: 2000,
+    approvalRequired: 3, approvalNote: 300 },   // site safety requirements + O&M contact   // shared with network pilots (network.js)
   // drone maintenance log: inspections (with ticked checklist), parts replaced, firmware updates, repairs
   maint: { sn: 30, date: 10, type: 40, checks: 3000, parts: 1000, firmware: 300, by: 120, notes: 4000, hoursAt: 12 },
+  // approvals register: CASA approvals, airport authorisations and landowner permissions.
+  // jobs = keys of this account's own jobs; aspexJobs = keys of Aspex jobs (shared to a pilot) it covers.
+  // The document itself (docFile/docName) is set by its own upload route, not here.
+  approvals: { type: 80, title: 160, authority: 160, ref: 120, validFrom: 10, validTo: 10, siteId: 48, area: 300,
+    heightFt: 10, conditions: 3000, notes: 2000, jobs: 1200, aspexJobs: 1200 },
 };
+// Approvals: which jobs one is linked to, and whether its dates cover a job's dates.
+const keysOf = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+const covers = (a, j) => { const from = j.start || '', to = j.end || j.start || '';
+  return (!a.validFrom || !from || a.validFrom <= from) && (!a.validTo || !to || a.validTo >= to); };
 const safeKey = (k) => /^[a-z0-9-]{1,48}$/.test(k) ? k : null;
 const opsId = (uid, kind, key) => h40(uid + ':' + kind + ':' + key);
 const opsDoc = (uid, kind, key) => db.get('lbOps', opsId(uid, kind, key));
 
 function ops(uid) {
-  const o = { clients: {}, sites: {}, jobs: {}, maint: {}, flightJob: {} };
+  const o = { clients: {}, sites: {}, jobs: {}, maint: {}, approvals: {}, flightJob: {} };
   for (const r of db.all('lbOps')) if (r.uid === uid && o[r.kind]) o[r.kind][r.key] = r.item;
   for (const f of flights(uid)) if (f.jobId && o.jobs[f.jobId]) o.flightJob[f.sha256] = f.jobId;
   return o;
@@ -154,6 +164,7 @@ function saveOps(uid, b) {
       if (item === null) {
         const d = opsDoc(uid, kind, key);
         if (d) db.remove('lbOps', d.id);
+        if (d?.item?.docFile) db.deleteFile(d.item.docFile);
         if (kind === 'jobs') for (const f of flights(uid)) if (f.jobId === key) db.update('lbFlights', f.id, { jobId: '' });
         continue;
       }
@@ -210,6 +221,6 @@ async function claimUnowned(uid) {
 
 module.exports = { mergeTruncatedSerials,
   clean, flights, flightBySha, flightByFile, putFlight, renumber, publicFlight,
-  getKeys, putKeys, inventory, saveInventory, ops, saveOps, putOps, updateSite, safeKey,
+  getKeys, putKeys, inventory, saveInventory, ops, saveOps, putOps, opsDoc, keysOf, covers, updateSite, safeKey,
   noteUpload, uploads, claimUnowned, state, setState,
 };

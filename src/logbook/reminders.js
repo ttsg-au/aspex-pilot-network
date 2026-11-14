@@ -17,6 +17,9 @@ const daysTo = (iso) => Math.round((Date.parse(iso + 'T00:00:00Z') - Date.parse(
 const fmt = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : null; };
 
+const network = require('./network');
+const coveringApprovals = (ops, key, j) => Object.entries(ops.approvals || {}).filter(([, a]) => store.keysOf(a.jobs).includes(key) && store.covers(a, j)).map(([k]) => k);
+
 function expiry(list, label, iso, warnDays = 60) {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
   const d = daysTo(iso);
@@ -26,13 +29,27 @@ function expiry(list, label, iso, warnDays = 60) {
 
 // Everything due for one person.
 function itemsFor(u) {
-  const out = { paperwork: [], drones: [], batteries: [] };
+  const out = { paperwork: [], approvals: [], drones: [], batteries: [] };
   const prof = u.profile || {};
   expiry(out.paperwork, 'Your RePL', prof.replExpiry);
   expiry(out.paperwork, 'Your insurance', prof.insuranceExpiry);
 
   const flights = store.flights(u.id).filter(f => f.isFlight);
   const inv = store.inventory(u.id), ops = store.ops(u.id);
+  for (const a of Object.values(ops.approvals || {})) {
+    if (!a.validTo || daysTo(a.validTo) < -30) continue;           // long expired: stop nagging
+    expiry(out.approvals, `${a.title || a.type || 'Approval'}${a.ref ? ` (${a.ref})` : ''}`, a.validTo, 30);
+  }
+  // jobs that need an approval but have no current one covering their dates
+  const today = sydney().date;
+  for (const [key, j] of Object.entries(ops.jobs || {})) {
+    if (j.approvalRequired !== '1' || j.status === 'Complete' || j.status === 'Cancelled' || (j.end || j.start || '9') < today) continue;
+    if (!coveringApprovals(ops, key, j).length && !(u.role === 'owner' && j.networkJobId && network.pilotApprovalsForJob(key).some(a => a.covers))) out.approvals.push({ level: 'red', text: `${j.name || 'A job'}${j.start ? ` (${fmt(j.start)})` : ''} needs an approval, and none covering its dates is linked yet.` });
+  }
+  if (u.role !== 'owner') for (const j of network.jobsFor(u)) {          // Aspex jobs this pilot is flying
+    if (!j.approvalRequired || j.progress?.completeAt || (j.end || j.start || '9') < today) continue;
+    if (!j.approvals.some(a => a.covers)) out.approvals.push({ level: 'red', text: `Aspex job ${j.name}${j.start ? ` (${fmt(j.start)})` : ''} needs an approval, and none covering its dates is linked yet.` });
+  }
   for (const [sn, a] of Object.entries(inv.aircraft)) {
     if (a.status === 'Retired') continue;
     const name = a.code || a.model || sn;
@@ -68,7 +85,7 @@ function itemsFor(u) {
   out.batteries.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return out;
 }
-const count = (it) => it.paperwork.length + it.drones.length + it.batteries.length;
+const count = (it) => it.paperwork.length + it.approvals.length + it.drones.length + it.batteries.length;
 
 async function sendTo(u, { force = false } = {}) {
   const it = itemsFor(u);
@@ -76,7 +93,7 @@ async function sendTo(u, { force = false } = {}) {
   const sec = (title, list) => list.length ? `**${title}**\n${list.map(x => `${x.level === 'red' ? '🔴' : '🟠'} ${x.text}`).join('\n')}\n\n` : '';
   const first = (u.profile?.fullName || u.name || '').split(' ')[0] || 'there';
   const text = count(it)
-    ? `Hi ${first},\n\nHere's what's coming up in your flight logbook:\n\n${sec('Licences and paperwork', it.paperwork)}${sec('Drones', it.drones)}${sec('Batteries', it.batteries)}You get this email on Mondays when something is due. You can turn it off on the Me tab in your logbook.`
+    ? `Hi ${first},\n\nHere's what's coming up in your flight logbook:\n\n${sec('Licences and paperwork', it.paperwork)}${sec('Approvals', it.approvals)}${sec('Drones', it.drones)}${sec('Batteries', it.batteries)}You get this email on Mondays when something is due. You can turn it off on the Me tab in your logbook.`
     : `Hi ${first},\n\nNothing is due in your flight logbook right now. This is a test of your weekly reminder email.`;
   await mail.send({ to: u.email, subject: count(it) ? `Flight logbook: ${count(it)} thing${count(it) === 1 ? '' : 's'} need${count(it) === 1 ? 's' : ''} attention` : 'Flight logbook reminders (test)',
     text, buttons: [{ label: 'Open my logbook', url: `${config.baseUrl}/logbook/`, primary: true }] });
