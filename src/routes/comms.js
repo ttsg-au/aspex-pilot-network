@@ -217,10 +217,14 @@ Aspex Drone Services`,
 const JOB_STATUS = [['open', 'Open – finding pilots'], ['filled', 'Filled'], ['completed', 'Completed'], ['cancelled', 'Cancelled']];
 const jobStatusLabel = (s) => (JOB_STATUS.find(x => x[0] === s) || [s, s])[1];
 
+// A date range is a window the pilot can pick their days from, not a booking for the whole range.
+const isWindow = (j) => !!(j.startDate && j.endDate && j.endDate !== j.startDate);
 function jobSummary(j) {
+  const win = isWindow(j);
   const lines = [
-    ['Job', j.title], ['Client / type', j.client], ['Site', j.site], ['Location', [j.location, j.state].filter(Boolean).join(', ')],
-    ['Dates', [fmtDate(j.startDate), j.endDate && j.endDate !== j.startDate ? fmtDate(j.endDate) : ''].filter(Boolean).join(' – ')],
+    ['Job', j.title], ['Type of work', j.client], ['Site', j.site], ['Location', [j.location, j.state].filter(Boolean).join(', ')],
+    [win ? 'Work window' : 'Date', [fmtDate(j.startDate), win ? fmtDate(j.endDate) : ''].filter(Boolean).join(' – ')],
+    ['Days needed on site', j.daysNeeded && (win ? `${j.daysNeeded} – you choose which days within the window` : j.daysNeeded)],
     ['Suits', { A: 'Part A pilots (sub-2 kg)', B: 'Part B certified operators', any: 'Any pilot in the network' }[j.part]],
     ['Requirements', j.requirements], ['Rate', j.payNotes], ['Please respond by', fmtDate(j.respondBy)],
   ].filter(([, v]) => v);
@@ -231,12 +235,13 @@ function jobForm(j = {}, ids = []) {
   return `<form method="post" action="${j.id ? '/jobs/' + j.id : '/jobs'}" class="card grid3">
 ${ids.map(id => `<input type="hidden" name="ids" value="${esc(id)}">`).join('')}
 <label class="full">Job title<input name="title" value="${esc(j.title)}" required placeholder="e.g. Thermography – 120 MW solar farm"></label>
-<label>Client / type of work<input name="client" value="${esc(j.client)}" placeholder="e.g. Solar farm thermography"></label>
+<label>Type of work (sent to pilots – never the client's name)<input name="client" value="${esc(j.client)}" placeholder="e.g. Solar farm thermography"></label>
 <label>Site<input name="site" value="${esc(j.site)}"></label>
 <label>Nearest town<input name="location" value="${esc(j.location)}"></label>
 <label>State<select name="state">${options(M.STATES, j.state, { blank: '—' })}</select></label>
-<label>Start date<input type="date" name="startDate" value="${esc(j.startDate)}"></label>
-<label>End date<input type="date" name="endDate" value="${esc(j.endDate)}"></label>
+<label>Window opens<input type="date" name="startDate" value="${esc(j.startDate)}"></label>
+<label>Window closes<input type="date" name="endDate" value="${esc(j.endDate)}"></label>
+<label>Days needed on site<input name="daysNeeded" value="${esc(j.daysNeeded)}" placeholder="e.g. 2 days"></label>
 <label>Suits<select name="part">${options([['any', 'Any pilot'], ['A', 'Part A (sub-2 kg)'], ['B', 'Part B (certified)']], j.part || 'any')}</select></label>
 <label>Respond by<input type="date" name="respondBy" value="${esc(j.respondBy)}"></label>
 <label>Rate / pay notes<input name="payNotes" value="${esc(j.payNotes)}" placeholder="e.g. Day rate agreed individually"></label>
@@ -247,7 +252,7 @@ ${ids.map(id => `<input type="hidden" name="ids" value="${esc(id)}">`).join('')}
 }
 const jobFields = (b) => ({
   title: b.title, client: b.client, site: b.site, location: b.location, state: b.state, startDate: b.startDate,
-  endDate: b.endDate, part: b.part, respondBy: b.respondBy, payNotes: b.payNotes, requirements: b.requirements,
+  endDate: b.endDate, daysNeeded: b.daysNeeded, part: b.part, respondBy: b.respondBy, payNotes: b.payNotes, requirements: b.requirements,
   details: b.details, privateNotes: b.privateNotes,
 });
 
@@ -343,11 +348,11 @@ router.get('/jobs/:id', (req, res) => {
 
   res.send(layout({ title: j.title, active: '/jobs', flash: flashOf(req), body: `
 <div class="head"><div><a href="/jobs" class="muted">← Jobs</a><h1>${esc(j.title)}</h1>
-<div class="sub">${badge(jobStatusLabel(j.status), j.status === 'open' ? 'warn' : 'good')} ${esc([j.location, j.state].filter(Boolean).join(', '))} · ${fmtDate(j.startDate)}</div></div>
+<div class="sub">${badge(jobStatusLabel(j.status), j.status === 'open' ? 'warn' : 'good')} ${esc([j.location, j.state].filter(Boolean).join(', '))} · ${fmtDate(j.startDate)}${isWindow(j) ? ' – ' + fmtDate(j.endDate) : ''}${j.daysNeeded ? ' · ' + esc(j.daysNeeded) + ' on site' : ''}</div></div>
 <form method="post" action="/jobs/${j.id}/status" class="stages">${JOB_STATUS.map(([v, l]) => `<button name="status" value="${v}" class="${j.status === v ? 'on' : ''}">${l}</button>`).join('')}</form></div>
 
 <section class="card"><h2>Responses</h2>
-<div class="tablewrap"><table class="list"><thead><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note</th><th>Assigned</th></tr></thead><tbody>
+<div class="tablewrap"><table class="list"><thead><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assigned</th></tr></thead><tbody>
 ${rs.map(r => { const p = db.get('pilots', r.pilotId) || { fullName: '(deleted)' }; const ag = p.id && M.agreementOf(p); return `<tr><td><a href="/pilots/${r.pilotId}"${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</a>${ag ? '' : ' ' + badge('No agreement', 'bad')}</td><td>${esc(p.homeBase)}</td>
 <td>${badge(ansLabel[r.answer] || r.answer, r.answer === 'interested' ? 'good' : r.answer === 'unavailable' ? 'plain' : 'warn')}<div class="sub">${r.answeredAt ? fmtDateTime(r.answeredAt) : 'Invited ' + fmtDateTime(r.invitedAt)}</div></td>
 <td>${nl2br(r.note || '')}</td>
@@ -356,6 +361,8 @@ ${rs.map(r => { const p = db.get('pilots', r.pilotId) || { fullName: '(deleted)'
 ${assignedIds.length ? `<p><a class="btn ghost" href="/messages/new?ids=${assignedIds.join(',')}&subject=${encodeURIComponent('Re: ' + j.title)}">Email the assigned pilot${assignedIds.length > 1 ? 's' : ''}</a></p>` : ''}
 ${rs.length ? `<p><a class="btn ghost" href="/messages/new?ids=${rs.map(r => r.pilotId).join(',')}&subject=${encodeURIComponent('Update: ' + j.title)}">Email everyone invited</a></p>` : ''}
 </section>
+
+<p class="sub">Site map, SWMS and capture settings: set up the site under <a href="/logbook/#sites">Sites</a>, make a job for it under <a href="/logbook/#jobs">logbook Jobs</a>, and choose this job in its <b>Pilot network job</b> box. Assigned pilots then see it in their logbook.</p>
 
 <section class="card" id="invite"><h2>Send this job to pilots</h2>
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
@@ -411,7 +418,7 @@ publicRouter.get('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
 ${c.job.status !== 'open' ? '<p class="flash warn">This job is no longer open, but you can still send a note.</p>' : ''}
 <form method="post">
 <p>Hi ${esc(M.firstName(c.pilot))}, you're telling us you're <b>${yes ? 'interested and available' : 'not available'}</b> for this job.</p>
-<label>Anything to add? (optional)<textarea name="note" rows="3" placeholder="${yes ? 'e.g. available from the 12th, can bring my own Mavic 3T' : ''}">${esc(c.resp && c.resp.note)}</textarea></label>
+<label>${yes && isWindow(c.job) ? 'Which days within the window suit you?' : 'Anything to add? (optional)'}<textarea name="note" rows="3" placeholder="${yes ? (isWindow(c.job) ? 'e.g. the 12th and 13th, or any two days after the 10th' : 'e.g. can bring my own Mavic 3T') : ''}">${esc(c.resp && c.resp.note)}</textarea></label>
 <button>${yes ? 'Confirm – I’m interested' : 'Confirm – not available'}</button>
 </form>
 <p class="sub">Changed your mind? <a href="${config.baseUrl}/r/${c.job.id}/${c.pilot.id}/${yes ? 'unavailable' : 'interested'}/${req.params.token}">${yes ? 'I’m not available' : 'I’m interested after all'}</a></p>` }));
@@ -426,7 +433,7 @@ publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   mail.send({
     to: config.adminEmail,
     subject: `${c.pilot.fullName} is ${c.answer === 'interested' ? 'INTERESTED in' : 'not available for'}: ${c.job.title}`,
-    text: `${c.pilot.fullName} (${c.pilot.homeBase || c.pilot.state || ''}) replied: ${c.answer === 'interested' ? 'interested and available' : 'not available'}.${fields.note ? '\n\nTheir note:\n' + fields.note : ''}`,
+    text: `${c.pilot.fullName} (${c.pilot.homeBase || c.pilot.state || ''}) replied: ${c.answer === 'interested' ? 'interested and available' : 'not available'}.${fields.note ? `\n\n${c.answer === 'interested' && isWindow(c.job) ? 'Days that suit them' : 'Their note'}:\n` + fields.note : ''}`,
     buttons: [{ label: 'Open the job', url: `${config.baseUrl}/jobs/${c.job.id}`, primary: true }],
   }).catch(e => console.error('Admin notify failed:', e.message));
   res.send(bare({ title: 'Thanks', body: `<p class="brandline"><span class="dot"></span>Aspex Drone Services</p><h1>Thanks, ${esc(M.firstName(c.pilot))}</h1>
