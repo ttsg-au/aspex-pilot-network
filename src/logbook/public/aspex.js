@@ -14,8 +14,15 @@ const SAFETY = [
   ['pad', '🎯', 'Landing pad'], ['firstaid', '🩹', 'First aid kit incl. snake-bite bandages'], ['water', '💧', 'Plenty of water / heat stress plan'],
   ['fire', '🧯', 'Fire extinguisher + LiPo battery bag'], ['comms', '📞', 'Phone/UHF + site emergency contacts'], ['insects', '🦟', 'Insect repellent'],
   ['vehicle', '🚗', 'Site vehicle rules (speed limit, beacon/flag)'], ['electrical', '⚡', "Electrical hazard - don't touch panels, inverters, cabling; stay out of HV yards"],
-  ['lone', '👤', 'Lone worker check-ins'], ['observer', '👀', 'Visual observer'],
+  ['lone', '👤', 'Lone worker check-ins'], ['observer', '👀', 'Visual observer'], ['powerlines', '🗼', 'Overhead power lines on site'],
 ];
+// The rule that goes with "Overhead power lines on site" (shown on the job and in the job pack).
+const POWERLINE_RULE = `<div class="pl-rule" style="margin-top:8px;padding:8px 10px;border-left:4px solid #b3261e;background:#fdf1f0">
+  <b>🗼 Overhead power lines on this site.</b> Before flying, check the site on Google satellite view and ask the site contact where the significant power lines run - the sites are too big to walk. Drone obstacle sensors often can't see wires.
+  <ul style="margin:4px 0 0 18px;padding:0">
+    <li><b>High-voltage lines</b> (steel towers or large poles, long insulator strings): <b>do not cross them</b> - never fly over, under or through them. Plan flights to stay on one side. Expect compass and signal interference near them.</li>
+    <li><b>Smaller power lines:</b> unless the site sets a different rule, programme the flight to clear them by <b>at least 5 m above the wires</b>. Never fly under them or between the wires.</li>
+  </ul></div>`;
 const safetyList = j => (j.safety || '').split('|').filter(k => SAFETY.some(s => s[0] === k));
 function safetyView(j) {
   const on = new Set(safetyList(j));
@@ -23,6 +30,7 @@ function safetyView(j) {
   return `<div class="safety-view">
     ${j.siteContactName || j.siteContactPhone ? `<div class="contact">📞 <b>Site contact:</b> ${esc(j.siteContactName || '')} ${j.siteContactPhone ? `<a href="tel:${esc(j.siteContactPhone.replace(/\s/g, ''))}">${esc(j.siteContactPhone)}</a>` : ''}</div>` : ''}
     ${on.size ? `<b>Required on site</b><div class="sicons">${SAFETY.filter(s => on.has(s[0])).map(s => `<span class="sicon"><span>${s[1]}</span>${esc(s[2])}</span>`).join('')}</div>` : ''}
+    ${on.has('powerlines') ? POWERLINE_RULE : ''}
     ${j.safetyNotes ? `<div class="muted" style="white-space:pre-wrap;margin-top:6px">${esc(j.safetyNotes)}</div>` : ''}</div>`;
 }
 // Editor inside the job form (your jobs, or a pilot's own jobs).

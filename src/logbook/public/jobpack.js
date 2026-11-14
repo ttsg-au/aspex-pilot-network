@@ -78,6 +78,7 @@ function openJobPack(p) {
       <h2>Safety on site</h2>
       ${p.swmsUrl ? `<p>Site SWMS: <a href="${esc(p.swmsUrl)}">${esc(p.swmsUrl)}</a></p>` : ''}
       ${safety.length ? `<div>${safety.map(x => `<span class="sic">${x[1]} ${esc(x[2])}</span>`).join('')}</div>` : '<p class="muted">No site requirements listed.</p>'}
+      ${safety.some(x => x[0] === 'powerlines') ? `<div class="keep">${POWERLINE_RULE}</div>` : ''}
       ${p.safetyNotes ? `<p style="white-space:pre-wrap">${esc(p.safetyNotes)}</p>` : ''}
 
       ${p.capture ? `<h2>Capture settings</h2><p style="white-space:pre-wrap">${esc(p.capture)}</p>` : ''}
@@ -85,6 +86,7 @@ function openJobPack(p) {
       <h2>Before flying</h2>
       <ul style="margin:0;padding-left:18px">
         <li>Confirm the airspace against official Airservices data (for example in OpenSky) and check NOTAMs for the day.</li>
+        <li>Check for overhead power lines (Google satellite view, and ask the site contact) and plan flights clear of them.</li>
         <li>Carry this pack and any approval documents, and follow every approval condition.</li>
         <li>Complete your own aircraft and pre-flight checklists.</li>
       </ul>
