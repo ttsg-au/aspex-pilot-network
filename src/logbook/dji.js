@@ -33,7 +33,13 @@ const needsCycles = (f) => f && f.track === 'ok' && (f.batteryCycles == null ? !
 
 // Ask DJI for a log's decryption keys. Done here rather than with the parser's own fetchKeychains, which
 // reports every failure as "Invalid Api Key" - this passes on DJI's actual answer (HTTP status and message).
+// The parser's own request is tried first (it's what has always worked); only if that fails is the request
+// repeated directly, to get DJI's real reason (or the keys, if the second try succeeds).
 async function fetchKeys(log, apiKey) {
+  try { return await log.fetchKeychains(apiKey); } catch {}
+  return fetchKeysDirect(log, apiKey);
+}
+async function fetchKeysDirect(log, apiKey) {
   const body = JSON.stringify(log.keychainsRequest());
   let res;
   try {
