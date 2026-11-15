@@ -146,7 +146,7 @@ async function renderJobNetwork(key) {
     <table class="sum"><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assign</th></tr>
       ${(net.sent || []).map(s => `<tr><td>${esc(s.name)}${s.agreement ? '' : ' <span class="pill bad">No agreement</span>'}</td><td>${esc(s.base)}</td>
         <td><select data-reply="${esc(s.pilotId)}" style="font:inherit;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:${s.answer === 'interested' ? 'var(--accent-soft)' : s.answer === 'unavailable' ? '#f1f3f4' : 'var(--warn-soft)'}">
-            ${[['invited', 'No reply yet'], ['interested', 'Interested'], ['unavailable', 'Not available']].map(([v, l]) => `<option value="${v}"${s.answer === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+            ${[['invited', 'No reply yet'], ['interested', 'Accepted'], ['unavailable', 'Declined']].map(([v, l]) => `<option value="${v}"${s.answer === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <div class="muted" style="font-size:12px">${(() => { const d = (iso) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
             return s.answeredAt ? (s.byAspex ? 'recorded by you ' : 'replied ') + d(s.answeredAt) : s.invitedAt ? 'sent ' + d(s.invitedAt) : ''; })()}</div></td>
         <td><textarea data-rnote="${esc(s.pilotId)}" rows="1" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 5px" placeholder="days that suit, from their reply">${esc(s.note)}</textarea></td>

@@ -119,7 +119,7 @@ function describeError(err) {
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // Plain text → simple branded HTML. Blank lines become paragraphs; URLs become links; **text** becomes bold.
-function toHtml(text, buttons = []) {
+function toHtml(text, buttons = [], top = false) {
   const paras = String(text).split(/\n{2,}/).map(p =>
     `<p style="margin:0 0 14px">${esc(p).replace(/\n/g, '<br>')
       .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
@@ -129,18 +129,18 @@ function toHtml(text, buttons = []) {
   return `<!doctype html><html><body style="margin:0;background:#f3f5f7;font-family:Segoe UI,Arial,sans-serif;color:#1d2b36;font-size:15px;line-height:1.5">
 <div style="max-width:620px;margin:0 auto;padding:24px 16px">
 <div style="background:#fff;border-radius:8px;padding:26px 26px 12px;border:1px solid #e1e6eb">
-${paras}${btns}
+${top && btns ? (() => { const ps = paras.split('</p>'); const at = Math.min(3, ps.length - 1); return ps.slice(0, at).join('</p>') + '</p>' + btns.replace('margin:22px 0', 'margin:0 0 18px') + ps.slice(at).join('</p>'); })() : paras}${btns}
 </div>
 <p style="color:#6b7a86;font-size:12px;margin:14px 4px">Aspex Drone Services · National Pilot Network · aspex.com.au</p>
 </div></body></html>`;
 }
 
-async function send({ to, subject, text, buttons = [] }) {
+async function send({ to, subject, text, buttons = [], buttonsTop = false }) {
   const plain = text.replace(/\*\*(.+?)\*\*/g, '$1');
   const msg = {
     from: config.smtp.from, replyTo: config.smtp.replyTo, to, subject,
     text: plain + (buttons.length ? '\n\n' + buttons.map(b => `${b.label}: ${b.url}`).join('\n') : ''),
-    html: toHtml(text, buttons),
+    html: toHtml(text, buttons, buttonsTop),
   };
   const m = method();
   if (m === 'test') {

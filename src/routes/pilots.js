@@ -269,7 +269,7 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
     return `<li><a href="/messages/${m.id}"><b>${esc(m.subject)}</b></a> · ${fmtDateTime(m.createdAt)} ${badge(r.status, r.status === 'sent' ? 'good' : r.status === 'failed' ? 'bad' : 'plain')}</li>`;
   }).join('') || '<li class="empty">None yet.</li>'}</ul></section>
 <section class="card"><h2>Jobs</h2><ul class="timeline">${jobs.map(({ r, job }) =>
-    `<li><a href="/jobs/${job.id}"><b>${esc(job.title)}</b></a> · ${badge(r.assigned ? 'Assigned' : { interested: 'Interested', unavailable: 'Not available', invited: 'Invited' }[r.answer] || r.answer, r.assigned ? 'good' : r.answer === 'interested' ? 'good' : r.answer === 'unavailable' ? 'plain' : 'warn')}</li>`).join('') || '<li class="empty">None yet.</li>'}</ul></section>
+    `<li><a href="/jobs/${job.id}"><b>${esc(job.title)}</b></a> · ${badge(r.assigned ? 'Assigned' : { interested: 'Accepted', unavailable: 'Declined', invited: 'Invited' }[r.answer] || r.answer, r.assigned ? 'good' : r.answer === 'interested' ? 'good' : r.answer === 'unavailable' ? 'plain' : 'warn')}</li>`).join('') || '<li class="empty">None yet.</li>'}</ul></section>
 </div>
 
 <section class="card danger-zone" id="delete"><h2>Delete pilot</h2>

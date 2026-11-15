@@ -79,17 +79,18 @@ Aspex Drone Services` },
 ];
 
 // ---------- Sending ----------
-// Buttons for a job call-out email ("I'm interested" / "Not available"), unique to each pilot.
+// Buttons for a job call-out email ("Accept this job" / "Decline"), unique to each pilot.
+// (The answers are still stored as 'interested' / 'unavailable', so links in emails already sent keep working.)
 function jobButtons(jobId, p) {
   const link = (a) => `${config.baseUrl}/r/${jobId}/${p.id}/${a}/${auth.linkToken(jobId, p.id)}`;
-  return [{ label: 'I\u2019m interested', url: link('interested'), primary: true }, { label: 'Not available', url: link('unavailable') }];
+  return [{ label: 'Accept this job', url: link('interested'), primary: true }, { label: 'Decline', url: link('unavailable') }];
 }
 
 // Send (or re-send) a saved message to some of its recipients, recording each result.
 function deliver(msg, pilots) {
   const buttonsFor = msg.kind === 'job' && msg.jobId ? (p) => jobButtons(msg.jobId, p) : () => [];
   const items = pilots.map(p => ({
-    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p),
+    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p), buttonsTop: msg.kind === 'job',
   }));
   mail.sendBatch(items, (item, ok, err) => {
     const m = db.get('messages', msg.id);
@@ -235,7 +236,7 @@ function jobSummary(j) {
 function defaultJobEmail(j) {
   return `Hi {first_name},\n\nWe have a job coming up that may suit you. Details are below.
 
-To reply, please use the "I'm interested" or "Not available" button at the bottom of this email, rather than replying to the email, so your answer is recorded against the job.\n\n${jobSummary(j)}\n\nKind regards,\nKimberly Olsen\nAspex Drone Services`;
+Please accept or decline using the buttons at the top or bottom of this email, rather than replying to it, so your answer is recorded against the job.\n\n${jobSummary(j)}\n\nKind regards,\nKimberly Olsen\nAspex Drone Services`;
 }
 
 function jobForm(j = {}, ids = []) {
@@ -275,7 +276,7 @@ ${list.map(j => {
     return `<tr><td><a href="/jobs/${j.id}"><b>${esc(j.title)}</b></a><div class="sub">${esc(j.client)}</div></td>
 <td>${esc([j.location, j.state].filter(Boolean).join(', '))}</td><td class="sub">${fmtDate(j.startDate)}</td>
 <td>${badge(jobStatusLabel(j.status), j.status === 'open' ? 'warn' : j.status === 'cancelled' ? 'plain' : 'good')}</td>
-<td>${rs.length} invited · ${badge(n('interested') + ' interested', 'good')} ${n('unavailable') ? badge(n('unavailable') + ' not available', 'plain') : ''} ${rs.some(r => r.assigned) ? badge(rs.filter(r => r.assigned).length + ' assigned', 'good') : ''}</td></tr>`;
+<td>${rs.length} invited · ${badge(n('interested') + ' accepted', 'good')} ${n('unavailable') ? badge(n('unavailable') + ' declined', 'plain') : ''} ${rs.some(r => r.assigned) ? badge(rs.filter(r => r.assigned).length + ' assigned', 'good') : ''}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="empty">No jobs yet.</td></tr>'}
 </tbody></table></div>` }));
 });
@@ -358,7 +359,7 @@ router.get('/jobs/:id', (req, res) => {
   const candidates = preIds.length ? preIds.map(id => db.get('pilots', id)).filter(Boolean) : M.filterPilots(fq);
   const invited = new Set(rs.map(r => r.pilotId));
   const assignedIds = rs.filter(r => r.assigned).map(r => r.pilotId);
-  const ansLabel = { invited: 'No reply yet', interested: 'Interested', unavailable: 'Not available' };
+  const ansLabel = { invited: 'No reply yet', interested: 'Accepted', unavailable: 'Declined' };
 
   res.send(layout({ title: j.title, active: '/jobs', flash: flashOf(req), body: `
 <div class="head"><div><a href="/jobs" class="muted">← Jobs</a><h1>${esc(j.title)}</h1>
@@ -389,7 +390,7 @@ ${!preIds.length && ((!('state' in req.query) && j.state) || (!('part' in req.qu
 <div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
 ${candidates.some(p => !M.agreementOf(p)) ? '<p class="sub">Pilots without a signed agreement are left unticked. You can still tick them to let them know about the job, but they can’t be assigned until they’ve signed.</p>' : ''}
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
-<label>Email (edit anything; {first_name} becomes each pilot's first name. “I'm interested” and “Not available” buttons are added at the bottom)<textarea name="body" rows="24">${esc(defaultJobEmail(j))}</textarea></label>
+<label>Email (edit anything; {first_name} becomes each pilot's first name. “Accept this job” and “Decline” buttons are added at the top and bottom)<textarea name="body" rows="24">${esc(defaultJobEmail(j))}</textarea></label>
 <button data-confirm="Send this job now?">Send job</button>
 </form></section>
 
@@ -430,14 +431,16 @@ publicRouter.get('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   res.send(bare({ title: c.job.title, body: `
 <p class="brandline"><span class="dot"></span>Aspex Drone Services</p>
 <h1>${esc(c.job.title)}</h1>
-<div class="msgbody">${nl2br(jobSummary(c.job))}</div>
 ${c.job.status !== 'open' ? '<p class="flash warn">This job is no longer open, but you can still send a note.</p>' : ''}
-<form method="post">
-<p>Hi ${esc(M.firstName(c.pilot))}, you're telling us you're <b>${yes ? 'interested and available' : 'not available'}</b> for this job.</p>
-<label>${yes && isWindow(c.job) ? 'Which days within the window suit you?' : 'Anything to add? (optional)'}<textarea name="note" rows="3" placeholder="${yes ? (isWindow(c.job) ? 'e.g. the 12th and 13th, or any two days after the 10th' : 'e.g. can bring my own Mavic 3T') : ''}">${esc(c.resp && c.resp.note)}</textarea></label>
-<button>${yes ? 'Confirm – I’m interested' : 'Confirm – not available'}</button>
+<form method="post" style="border:3px solid ${yes ? '#0f5e9c' : '#8a96a0'};border-radius:10px;padding:16px 18px;margin:18px 0">
+<h2 style="margin:0 0 6px">${yes ? 'One more step: confirm you accept this job' : 'One more step: confirm you’re declining'}</h2>
+<p style="margin:0 0 10px">Hi ${esc(M.firstName(c.pilot))}, your answer <b>isn’t sent until you press the button below</b>.</p>
+<label>${yes && isWindow(c.job) ? 'Which days within the window can you do?' : 'Anything to add? (optional)'}<textarea name="note" rows="3" placeholder="${yes ? (isWindow(c.job) ? 'e.g. the 12th and 13th, or any two days after the 10th' : 'e.g. can bring my own Mavic 3T') : ''}">${esc(c.resp && c.resp.note)}</textarea></label>
+<button style="font-size:17px;padding:12px 22px">${yes ? 'Confirm – I accept this job' : 'Confirm – I decline'}</button>
 </form>
-<p class="sub">Changed your mind? <a href="${config.baseUrl}/r/${c.job.id}/${c.pilot.id}/${yes ? 'unavailable' : 'interested'}/${req.params.token}">${yes ? 'I’m not available' : 'I’m interested after all'}</a></p>` }));
+<p class="sub">Changed your mind? <a href="${config.baseUrl}/r/${c.job.id}/${c.pilot.id}/${yes ? 'unavailable' : 'interested'}/${req.params.token}">${yes ? 'Decline instead' : 'Accept this job instead'}</a></p>
+<h3>Job details</h3>
+<div class="msgbody">${nl2br(jobSummary(c.job))}</div>` }));
 });
 publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   const c = responseContext(req);
@@ -448,12 +451,12 @@ publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   // Let you know straight away.
   mail.send({
     to: config.adminEmail,
-    subject: `${c.pilot.fullName} is ${c.answer === 'interested' ? 'INTERESTED in' : 'not available for'}: ${c.job.title}`,
-    text: `${c.pilot.fullName} (${c.pilot.homeBase || c.pilot.state || ''}) replied: ${c.answer === 'interested' ? 'interested and available' : 'not available'}.${fields.note ? `\n\n${c.answer === 'interested' && isWindow(c.job) ? 'Days that suit them' : 'Their note'}:\n` + fields.note : ''}`,
+    subject: `${c.pilot.fullName} ${c.answer === 'interested' ? 'ACCEPTED' : 'declined'}: ${c.job.title}`,
+    text: `${c.pilot.fullName} (${c.pilot.homeBase || c.pilot.state || ''}) ${c.answer === 'interested' ? 'accepted the job' : 'declined the job'}. Assign them on the job in the logbook.${fields.note ? `\n\n${c.answer === 'interested' && isWindow(c.job) ? 'Days that suit them' : 'Their note'}:\n` + fields.note : ''}`,
     buttons: [{ label: 'Open the job', url: `${config.baseUrl}/jobs/${c.job.id}`, primary: true }],
   }).catch(e => console.error('Admin notify failed:', e.message));
   res.send(bare({ title: 'Thanks', body: `<p class="brandline"><span class="dot"></span>Aspex Drone Services</p><h1>Thanks, ${esc(M.firstName(c.pilot))}</h1>
-<p>${c.answer === 'interested' ? 'We’ve noted that you’re interested. We’ll be in touch to confirm details.' : 'We’ve noted that you’re not available for this one. We’ll keep you in mind for the next job.'}</p>` }));
+<p>${c.answer === 'interested' ? 'You’ve accepted this job. Aspex will confirm with you, and once you’re assigned the job appears in your Flight Logbook with the site, safety and capture details.' : 'We’ve noted that you’ve declined this one. We’ll keep you in mind for the next job.'}</p>` }));
 });
 
 module.exports = { router, publicRouter, TEMPLATES, startSend };

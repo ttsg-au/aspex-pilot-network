@@ -100,7 +100,7 @@ ${unknownState ? `<a href="/pilots"><span>?</span><i style="width:${Math.min(100
 ${newOnes.length ? `<p><a class="btn ghost" href="/messages/new?ids=${newOnes.map(p => p.id).join(',')}&template=next_steps">Send these ${newOnes.length} their next steps</a></p>` : ''}</section>
 <section class="card"><h2>Latest job replies</h2>
 <ul class="timeline">${recentReplies.map(r => { const p = db.get('pilots', r.pilotId) || {}; const j = db.get('jobs', r.jobId) || {};
-    return `<li><a href="/pilots/${r.pilotId}"><b>${esc(p.fullName)}</b></a> ${badge(r.answer === 'interested' ? 'Interested' : 'Not available', r.answer === 'interested' ? 'good' : 'plain')} <a href="/jobs/${r.jobId}">${esc(j.title)}</a> <span class="sub">${fmtDateTime(r.answeredAt)}</span></li>`; }).join('') || '<li class="empty">No replies yet.</li>'}</ul></section>
+    return `<li><a href="/pilots/${r.pilotId}"><b>${esc(p.fullName)}</b></a> ${badge(r.answer === 'interested' ? 'Accepted' : 'Declined', r.answer === 'interested' ? 'good' : 'plain')} <a href="/jobs/${r.jobId}">${esc(j.title)}</a> <span class="sub">${fmtDateTime(r.answeredAt)}</span></li>`; }).join('') || '<li class="empty">No replies yet.</li>'}</ul></section>
 </div>
 
 <section class="card" id="expiring"><h2>Credentials expired or expiring within ${config.expiryWarnDays} days</h2>
