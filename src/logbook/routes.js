@@ -181,7 +181,7 @@ router.post('/logbook/api/tools/keychains', raw('60mb'), async (req, res) => {
     if (!keychains) {
       const key = (req.lb.djiApiKey || '').trim();
       if (!key) return res.json({ error: 'no DJI developer key set in Settings' });
-      keychains = await (req.query.fresh ? dji.fetchKeysDirect : dji.fetchKeys)(log, key); store.putKeys(sha, keychains);
+      keychains = await dji.fetchKeys(log, key); store.putKeys(sha, keychains);
     }
     res.json({ sha, version: log.version, department: log.keychainsRequest().department, keychains });
   } catch (e) { res.json({ error: String(e?.message || e).slice(0, 200) + (dept != null ? ` (log department ${dept})` : '') }); }
