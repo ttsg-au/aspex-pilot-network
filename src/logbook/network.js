@@ -232,7 +232,24 @@ router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
       progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(f => ({ ...flightOut(f), check: chk[f.sha256] || null })),
       approvals: u ? pilotApprovals(u.id, x.key, x.job) : [] };
   }));
-  res.json({ pilots, basis: BASIS.independent.label });
+  // Everyone the job was sent to, with their reply, so replies and assigning are in the logbook job itself.
+  const M = require('../model');
+  const sent = db.where('jobResponses', r => r.jobId === x.job.networkJobId).map(r => {
+    const p = db.get('pilots', r.pilotId) || {};
+    return { pilotId: r.pilotId, name: p.fullName || '(deleted pilot)', base: p.homeBase || p.state || '', answer: r.answer || 'invited',
+      answeredAt: r.answeredAt || '', invitedAt: r.invitedAt || '', note: r.note || '', assigned: !!r.assigned, agreement: !!(p.id && M.agreementOf(p)) };
+  }).sort((a, b) => (b.assigned - a.assigned) || ((a.answer === 'interested' ? 0 : a.answer === 'invited' ? 1 : 2) - (b.answer === 'interested' ? 0 : b.answer === 'invited' ? 1 : 2)) || a.name.localeCompare(b.name));
+  res.json({ pilots, sent, basis: BASIS.independent.label });
+});
+// Assign / unassign a pilot who was sent the job (same rule as the Jobs page: no signed agreement, no work).
+router.post('/logbook/api/jobs/:key/network/assign', ownerOnly, (req, res) => {
+  const x = linkedJobs().find(l => l.key === req.params.key);
+  const r = x && db.all('jobResponses').find(y => y.jobId === x.job.networkJobId && y.pilotId === req.body?.pilotId);
+  if (!r) return res.status(404).type('text').send('That pilot wasn’t sent this job.');
+  const p = db.get('pilots', r.pilotId);
+  if (!r.assigned && p && !require('../model').agreementOf(p)) return res.status(400).type('text').send(`${p.fullName} hasn't got a signed contractor agreement, so they can't be assigned work yet.`);
+  db.update('jobResponses', r.id, { assigned: !r.assigned });
+  res.json({ assigned: !r.assigned });
 });
 router.get('/logbook/api/jobs/:key/network-track/:uid/:file', ownerOnly, async (req, res) => {
   const x = linkedJobs().find(l => l.key === req.params.key);

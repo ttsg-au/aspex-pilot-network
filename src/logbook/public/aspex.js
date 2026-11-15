@@ -142,6 +142,15 @@ async function renderJobNetwork(key) {
       ${!j.networkJobId && netJobs.length ? `<details class="full"><summary class="muted" style="font-size:12px;cursor:pointer">Already sent this job the old way, from the Jobs page? Link it</summary>
         <label>Earlier call-out<select id="nJob">${sel(netJobs.map(n => [n.id, `${n.title}${n.startDate ? ' · ' + dateOnly(n.startDate) : ''}`]), '', '— choose —')}</select></label></details>` : ''}
     </div>
+    ${j.networkJobId ? `<h4>Pilots sent this job (${(net.sent || []).length})</h4>
+    <table class="sum"><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assign</th></tr>
+      ${(net.sent || []).map(s => `<tr><td>${esc(s.name)}${s.agreement ? '' : ' <span class="pill bad">No agreement</span>'}</td><td>${esc(s.base)}</td>
+        <td><span class="pill ${s.answer === 'interested' ? 'ok' : s.answer === 'unavailable' ? '' : 'warn'}">${s.answer === 'interested' ? 'Interested' : s.answer === 'unavailable' ? 'Not available' : 'No reply yet'}</span>
+          <div class="muted" style="font-size:12px">${s.answeredAt ? 'replied ' + dateOnly(s.answeredAt.slice(0, 10)) : s.invitedAt ? 'sent ' + dateOnly(s.invitedAt.slice(0, 10)) : ''}</div></td>
+        <td style="white-space:pre-wrap">${esc(s.note)}</td>
+        <td>${s.assigned || s.agreement ? `<button class="btn sm ${s.assigned ? '' : 'ghost'}" data-assign="${esc(s.pilotId)}">${s.assigned ? '✓ Assigned' : 'Assign'}</button>` : '<span class="muted" style="font-size:12px">Agreement needed</span>'}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="muted">Not sent to anyone yet.</td></tr>'}</table>
+    <div class="muted" style="font-size:12px;margin:4px 0 12px">Assigning a pilot gives them this job in their logbook (site, map, safety, SWMS, capture settings, approvals), and they appear below. Click <b>✓ Assigned</b> again to unassign.</div>` : ''}
     ${j.networkJobId ? '<h4>Assigned pilots</h4>' : ''}
     ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Approval flags</th><th>Their approvals</th><th>Complete</th></tr>
       ${net.pilots.map(p => {
@@ -157,8 +166,14 @@ async function renderJobNetwork(key) {
           <td>${(p.approvals || []).map(a => `${a.docName ? `<a href="api/jobs/${encodeURIComponent(key)}/network-approval/${p.uid}/${encodeURIComponent(a.key)}/doc" target="_blank" rel="noopener">📄 ${esc(a.title || a.type)}</a>` : esc(a.title || a.type)}${a.ref ? ' <span class="muted">' + esc(a.ref) + '</span>' : ''}${a.covers ? '' : ' <span class="pill bad">dates don’t cover the job</span>'}
             <label style="display:block;font-size:12px;cursor:pointer" title="Records that Aspex received and looked at a copy, and when. It isn't a check that the approval is adequate - the operation stays the pilot's."><input type="checkbox" data-sight="${p.uid}|${esc(a.key)}"${a.sightedAt ? ' checked' : ''}> ${a.sightedAt ? 'Sighted ' + dateOnly(a.sightedAt.slice(0, 10)) : 'Sighted'}</label>`).join('<br>') || '–'}</td>
           <td>${p.progress.completeAt ? dateOnly(p.progress.completeAt) : '–'}</td></tr>`;
-      }).join('') || '<tr><td colspan="10" class="muted">No pilots assigned on the pilot network job yet.</td></tr>'}</table>
+      }).join('') || '<tr><td colspan="10" class="muted">No pilots assigned yet - use Assign in the list above.</td></tr>'}</table>
       ${net.pilots.some(p => p.flights.length) ? '<div id="netMap" style="height:340px;border-radius:8px;margin-top:8px"></div><div class="muted" style="font-size:12px;margin-top:4px">Pilot flight routes on this job. Click a route for details.</div>' : ''}` : ''}`;
+  $('#jobNet').querySelectorAll('[data-assign]').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network/assign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pilotId: b.dataset.assign }) });
+    if (!r.ok) { b.disabled = false; return toast(await r.text(), 3500); }
+    toast((await r.json()).assigned ? 'Assigned - the job is now in their logbook' : 'Unassigned'); renderJobNetwork(key);
+  });
   $('#jobNet').querySelectorAll('[data-sight]').forEach(c => c.onchange = async () => {
     const [uid, ak] = c.dataset.sight.split('|');
     const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-approval/${uid}/${encodeURIComponent(ak)}/sighted`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: c.checked }) });
