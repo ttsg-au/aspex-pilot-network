@@ -76,6 +76,7 @@ function renderAspex() {
       <h2>${esc(j.name || 'Aspex job')} <span class="hint">${fmtRange(j.start, j.end)}${j.site ? ' · ' + esc(j.site.name || '') + (j.site.areaHa ? ` (${num(j.site.areaHa, 0)} ha)` : '') : ''}</span>
         ${p.completeAt ? '<span class="pill ok">Flying complete</span>' : acked ? '<span class="pill">Accepted</span>' : '<span class="pill warn">Please read and accept</span>'}</h2>
       <div style="padding:12px 14px">
+        ${j.rate ? `<div style="margin-bottom:8px"><b>Your rate:</b> ${esc(j.rate)}</div>` : ''}
         <div class="basis"><b>Operating basis: ${esc(j.basis.label)}.</b> ${esc(j.basis.text)}</div>
         ${safetyView(j)}
         ${aspexApprovalsView(j)}
@@ -143,16 +144,17 @@ async function renderJobNetwork(key) {
         <label>Earlier call-out<select id="nJob">${sel(netJobs.map(n => [n.id, `${n.title}${n.startDate ? ' · ' + dateOnly(n.startDate) : ''}`]), '', '— choose —')}</select></label></details>` : ''}
     </div>
     ${j.networkJobId ? `<h4>Pilots sent this job (${(net.sent || []).length})</h4>
-    <table class="sum"><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assign</th></tr>
+    <table class="sum"><tr><th>Pilot</th><th>Base</th><th>Day rate</th><th>Reply</th><th>Note / days that suit</th><th>Assign</th></tr>
       ${(net.sent || []).map(s => `<tr><td>${esc(s.name)}${s.agreement ? '' : ' <span class="pill bad">No agreement</span>'}</td><td>${esc(s.base)}</td>
+        <td><input data-rate="${esc(s.pilotId)}" value="${esc(s.dayRate)}" placeholder="${net.jobRate ? 'job rate: ' + esc(net.jobRate) : 'not set'}" style="width:130px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 5px"></td>
         <td><select data-reply="${esc(s.pilotId)}" style="font:inherit;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:${s.answer === 'interested' ? 'var(--accent-soft)' : s.answer === 'unavailable' ? '#f1f3f4' : 'var(--warn-soft)'}">
             ${[['invited', 'No reply yet'], ['interested', 'Accepted'], ['unavailable', 'Declined']].map(([v, l]) => `<option value="${v}"${s.answer === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
           <div class="muted" style="font-size:12px">${(() => { const d = (iso) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
             return s.answeredAt ? (s.byAspex ? 'recorded by you ' : 'replied ') + d(s.answeredAt) : s.invitedAt ? 'sent ' + d(s.invitedAt) : ''; })()}</div></td>
         <td><textarea data-rnote="${esc(s.pilotId)}" rows="1" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 5px" placeholder="days that suit, from their reply">${esc(s.note)}</textarea></td>
         <td>${s.assigned || s.agreement ? `<button class="btn sm ${s.assigned ? '' : 'ghost'}" data-assign="${esc(s.pilotId)}">${s.assigned ? '✓ Assigned' : 'Assign'}</button>` : '<span class="muted" style="font-size:12px">Agreement needed</span>'}</td></tr>`).join('')
-        || '<tr><td colspan="5" class="muted">Not sent to anyone yet.</td></tr>'}</table>
-    <div class="muted" style="font-size:12px;margin:4px 0 12px">If a pilot replied by email, set their reply and note here yourself. You can assign anyone with a signed agreement, whatever their reply. Assigning a pilot gives them this job in their logbook (site, map, safety, SWMS, capture settings, approvals), and they appear below. Click <b>✓ Assigned</b> again to unassign.</div>` : ''}
+        || '<tr><td colspan="6" class="muted">Not sent to anyone yet.</td></tr>'}</table>
+    <div class="muted" style="font-size:12px;margin:4px 0 12px"><b>Day rate</b> is the pilot's own agreed rate (kept on their pilot record, used in every job email); leave it blank to use the job's rate. If a pilot replied by email, set their reply and note here yourself. You can assign anyone with a signed agreement, whatever their reply. Assigning a pilot gives them this job in their logbook (site, map, safety, SWMS, capture settings, approvals), and they appear below. Click <b>✓ Assigned</b> again to unassign.</div>` : ''}
     ${j.networkJobId ? '<h4>Assigned pilots</h4>' : ''}
     ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Approval flags</th><th>Their approvals</th><th>Complete</th></tr>
       ${net.pilots.map(p => {
@@ -175,6 +177,10 @@ async function renderJobNetwork(key) {
     toast(r.ok ? 'Saved' : await r.text());
   };
   $('#jobNet').querySelectorAll('[data-reply]').forEach(s => s.onchange = async () => { await saveReply(s.dataset.reply, { answer: s.value }); renderJobNetwork(key); });
+  $('#jobNet').querySelectorAll('[data-rate]').forEach(t => t.onchange = async () => {
+    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network/rate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pilotId: t.dataset.rate, rate: t.value.trim() }) });
+    toast(r.ok ? 'Day rate saved for this pilot' : await r.text());
+  });
   $('#jobNet').querySelectorAll('[data-rnote]').forEach(t => t.onchange = () => saveReply(t.dataset.rnote, { note: t.value.trim() }));
   $('#jobNet').querySelectorAll('[data-assign]').forEach(b => b.onclick = async () => {
     b.disabled = true;

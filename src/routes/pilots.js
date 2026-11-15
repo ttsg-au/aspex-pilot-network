@@ -250,6 +250,7 @@ ${r.text ? `<div class="sub">${nl2br(r.text)}</div>` : ''}</li>`).join('') || '<
 <label>Region<input name="region" value="${esc(p.region)}" placeholder="e.g. North Queensland"></label>
 <label>Map position <span class="sub">(optional – only if the map puts them in the wrong place)</span><input name="mapPos" value="${p.geo && p.geo.manual ? p.geo.lat + ', ' + p.geo.lng : ''}" placeholder="e.g. -32.43, 115.75 (from Google Maps)"></label>
 <label>Travel<select name="travel">${options(M.TRAVEL_OPTIONS, p.travel, { blank: '—' })}</select></label>
+<label>Agreed day rate <span class="sub">(shown in their job emails; blank = each job's rate)</span><input name="dayRate" value="${esc(p.dayRate)}" placeholder="e.g. $850/day + travel"></label>
 <label class="inline"><input type="checkbox" name="partA"${p.partA ? ' checked' : ''}> Part A (sub-2 kg solar)</label>
 <label class="inline"><input type="checkbox" name="partB"${p.partB ? ' checked' : ''}> Part B (certified operator)</label>
 <fieldset class="full"><legend>Drones</legend>${M.DRONE_OPTIONS.map(d => `<label class="inline"><input type="checkbox" name="drones" value="${esc(d)}"${(p.drones || []).includes(d) ? ' checked' : ''}> ${esc(d)}</label>`).join('')}
@@ -291,7 +292,7 @@ router.post('/pilots/:id', (req, res) => {
     portfolio: b.portfolio, homeBase: b.homeBase, state: b.state, region: b.region, travel: b.travel,
     partA: bool(b.partA), partB: bool(b.partB), drones, dronesOther: b.dronesOther, phoneType: b.phoneType || '',
     insuranceStatus: b.insuranceStatus, coverAmount: b.coverAmount, whiteCard: b.whiteCard,
-    experience: b.experience, goals: b.goals, notes: b.notes,
+    experience: b.experience, goals: b.goals, notes: b.notes, dayRate: String(b.dayRate || '').trim().slice(0, 120),
   });
   back(res, `/pilots/${req.params.id}`, 'Details saved.');
 });

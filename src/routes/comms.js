@@ -17,8 +17,11 @@ const idsFrom = (v) => [].concat(v || []).flatMap(x => String(x).split(',')).map
 function missingItems(p) {
   return M.readiness(p).partA.filter(i => !i.have).map(i => '• ' + i.label).join('\n') || '• Nothing – you’re all set';
 }
-function merge(text, p) {
+// A pilot's rate for a job: their own agreed day rate, else the job's rate.
+const rateFor = (p, job) => (p && p.dayRate) || (job && job.payNotes) || 'to be agreed – please ask before accepting';
+function merge(text, p, job) {
   return String(text)
+    .replace(/\{day_rate\}/g, rateFor(p, job))
     .replace(/\{first_name\}/g, M.firstName(p))
     .replace(/\{name\}/g, p.fullName || '')
     .replace(/\{state\}/g, p.state || '')
@@ -89,8 +92,9 @@ function jobButtons(jobId, p) {
 // Send (or re-send) a saved message to some of its recipients, recording each result.
 function deliver(msg, pilots) {
   const buttonsFor = msg.kind === 'job' && msg.jobId ? (p) => jobButtons(msg.jobId, p) : () => [];
+  const job = msg.jobId ? db.get('jobs', msg.jobId) : null;
   const items = pilots.map(p => ({
-    pilotId: p.id, to: p.email, subject: merge(msg.subject, p), text: merge(msg.body, p), buttons: buttonsFor(p), buttonsTop: msg.kind === 'job',
+    pilotId: p.id, to: p.email, subject: merge(msg.subject, p, job), text: merge(msg.body, p, job), buttons: buttonsFor(p), buttonsTop: msg.kind === 'job',
   }));
   mail.sendBatch(items, (item, ok, err) => {
     const m = db.get('messages', msg.id);
@@ -228,7 +232,7 @@ function jobSummary(j) {
     ['Days needed on site', j.daysNeeded && ((/^\d+$/.test(String(j.daysNeeded).trim()) ? `${String(j.daysNeeded).trim()} day${String(j.daysNeeded).trim() === '1' ? '' : 's'}` : j.daysNeeded)
       + (win ? ' – you choose which days within the window' : ''))],
     ['Suits', { A: 'Part A pilots (sub-2 kg)', B: 'Part B certified operators', any: 'Any pilot in the network' }[j.part]],
-    ['Requirements', j.requirements], ['Rate', j.payNotes], ['Please respond by', fmtDate(j.respondBy)],
+    ['Requirements', j.requirements], ['Your rate', '{day_rate}'], ['Please respond by', fmtDate(j.respondBy)],
   ].filter(([, v]) => v);
   return lines.map(([k, v]) => `${k}: ${v}`).join('\n') + (j.details ? '\n\n' + j.details : '');
 }
@@ -387,10 +391,11 @@ ${lb.linkedKey ? '' : lb.jobs.length ? `<form method="post" action="/jobs/${j.id
 ${preIds.length ? '' : filterBar(fq, `/jobs/${j.id}`) }
 ${!preIds.length && ((!('state' in req.query) && j.state) || (!('part' in req.query) && j.part !== 'any')) ? `<p class="sub">Showing only ${[!('state' in req.query) && j.state ? esc(j.state) : '', !('part' in req.query) && j.part !== 'any' ? 'Part ' + esc(j.part) : ''].filter(Boolean).join(', ')} pilots, to match the job. <a href="/jobs/${j.id}?state=&part=#invite">Show all pilots</a></p>` : ''}
 <form method="post" action="/jobs/${j.id}/send">
-<div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
+<div class="recips">${candidates.map(p => { const ag = M.agreementOf(p); return `<label class="chip"><input type="checkbox" name="ids" value="${p.id}"${ag ? ' checked' : ''}> <span${ag ? ' class="cleared"' : ''}>${esc(p.fullName)}</span> <span class="sub">${esc(p.state || p.homeBase)} · ${p.dayRate ? esc(p.dayRate) : j.payNotes ? 'job rate' : '<b style="color:#a12a1e">no rate</b>'}${invited.has(p.id) ? ' · already sent' : ''}</span>${ag ? '' : ' ' + badge('No agreement', 'bad')}</label>`; }).join('') || '<p class="empty">No pilots match these filters.</p>'}</div>
+<p class="sub">Each pilot's email shows <b>their</b> rate: their agreed day rate (set on their pilot page or on the logbook job), or this job's rate${j.payNotes ? ` (${esc(j.payNotes)})` : ' – <b>this job has no rate set</b>, so pilots without an agreed rate will see “to be agreed”'}.</p>
 ${candidates.some(p => !M.agreementOf(p)) ? '<p class="sub">Pilots without a signed agreement are left unticked. You can still tick them to let them know about the job, but they can’t be assigned until they’ve signed.</p>' : ''}
 <label>Subject<input name="subject" value="${esc('Job available: ' + j.title)}"></label>
-<label>Email (edit anything; {first_name} becomes each pilot's first name. “Accept this job” and “Decline” buttons are added at the top and bottom)<textarea name="body" rows="24">${esc(defaultJobEmail(j))}</textarea></label>
+<label>Email (edit anything; {first_name} becomes each pilot's first name and {day_rate} their rate (their agreed day rate, or the job's rate). “Accept this job” and “Decline” buttons are added at the top and bottom)<textarea name="body" rows="24">${esc(defaultJobEmail(j))}</textarea></label>
 <button data-confirm="Send this job now?">Send job</button>
 </form></section>
 
@@ -440,7 +445,7 @@ ${c.job.status !== 'open' ? '<p class="flash warn">This job is no longer open, b
 </form>
 <p class="sub">Changed your mind? <a href="${config.baseUrl}/r/${c.job.id}/${c.pilot.id}/${yes ? 'unavailable' : 'interested'}/${req.params.token}">${yes ? 'Decline instead' : 'Accept this job instead'}</a></p>
 <h3>Job details</h3>
-<div class="msgbody">${nl2br(jobSummary(c.job))}</div>` }));
+<div class="msgbody">${nl2br(merge(jobSummary(c.job), c.pilot, c.job))}</div>` }));
 });
 publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   const c = responseContext(req);
@@ -459,4 +464,4 @@ publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
 <p>${c.answer === 'interested' ? 'You’ve accepted this job. Aspex will confirm with you, and once you’re assigned the job appears in your Flight Logbook with the site, safety and capture details.' : 'We’ve noted that you’ve declined this one. We’ll keep you in mind for the next job.'}</p>` }));
 });
 
-module.exports = { router, publicRouter, TEMPLATES, startSend };
+module.exports = { router, publicRouter, TEMPLATES, startSend, rateFor };
