@@ -573,11 +573,19 @@ async function impUpload(files) {
   let i = 0;
   for (const f of files) {
     i++;
-    try {
-      const r = await fetch('api/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
-      const t = r.ok ? (await r.json()).summary : await r.text();
-      impWrite(`[${i}/${files.length}] ${f.name}  ${t}`);
-    } catch (e) { impWrite(`[${i}/${files.length}] ${f.name}  FAILED: ${e.message}`); }
+    // The host sometimes answers with an error page (e.g. Cloudflare 520) while busy or restarting: wait and try again.
+    let t = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const r = await fetch('api/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+        if (r.ok) { t = (await r.json()).summary; break; }
+        const body = await r.text();
+        if (r.status < 500 && !/<html/i.test(body)) { t = body; break; }      // a real answer from the logbook
+        t = `FAILED: the server didn't respond properly (error ${r.status})` + (attempt < 3 ? '' : ' - drop this file in again in a minute');
+      } catch (e) { t = 'FAILED: ' + e.message + (attempt < 3 ? '' : ' - drop this file in again in a minute'); }
+      if (attempt < 3) { impWrite(`[${i}/${files.length}] ${f.name}  server busy - trying again…`); await new Promise(res => setTimeout(res, 5000 * attempt)); }
+    }
+    impWrite(`[${i}/${files.length}] ${f.name}  ${t}`);
   }
   impWrite('Done.'); await load();
 }

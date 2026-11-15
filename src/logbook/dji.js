@@ -54,6 +54,9 @@ async function fetchKeysDirect(log, apiKey) {
   return j.data;
 }
 
+// Flights read before the two-battery / hot-swap fixes can have impossible figures: read those again in full.
+const badFigures = (f) => f && f.isFlight && (f.videoSec > 86400 || (/Matrice ?30/i.test(f.aircraftModel || '') && !f.batteries) || !(f.durationMin > 0) || f.durationMin > 180 || f.batteryCycles >= 1000 || (f.airMin > 0 && f.durationMin > 0 && f.airMin > f.durationMin * 1.5 + 1));
+
 async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const uid = user.id;
   const DJILog = await loadParser();
@@ -61,8 +64,6 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const existing = store.flightBySha(uid, sha256);
   // Network pilots without their own DJI developer key use Aspex's (the owner account's).
   const apiKey = (user.djiApiKey || db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
-  // Flights read before the two-battery / hot-swap fixes can have impossible figures: read those again in full.
-  const badFigures = (f) => f && f.isFlight && (f.videoSec > 86400 || (/Matrice ?30/i.test(f.aircraftModel || '') && !f.batteries) || !(f.durationMin > 0) || f.durationMin > 180 || f.batteryCycles >= 1000 || (f.airMin > 0 && f.durationMin > 0 && f.airMin > f.durationMin * 1.5 + 1));
   if (existing && FINAL.has(existing.track) && !badFigures(existing)) {
     // Already logged. The only thing a re-import can add is a missing charge-cycle count, and it
     // changes nothing else on the flight (the pilot's CASA details stay as they are).
@@ -285,4 +286,4 @@ function csv(rows) {
   return '﻿' + lines.join('\r\n');
 }
 
-module.exports = { fetchKeys, fetchKeysDirect, processFile, isDone, needsCycles, kml, csv };
+module.exports = { badFigures, fetchKeys, fetchKeysDirect, processFile, isDone, needsCycles, kml, csv };

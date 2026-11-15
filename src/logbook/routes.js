@@ -143,7 +143,7 @@ router.get('/logbook/api/import/skip', (req, res) => {
   const latest = {};
   for (const f of fl) if (f.batterySn && f.track === 'ok' && (!latest[f.batterySn] || (f.startUtc || '') > (latest[f.batterySn].startUtc || ''))) latest[f.batterySn] = f;
   const wanted = new Set(Object.values(latest).filter(dji.needsCycles).map(f => f.file));
-  res.json({ skip: fl.filter(f => dji.isDone(f) && !wanted.has(f.file)).map(f => f.file) });
+  res.json({ skip: fl.filter(f => dji.isDone(f) && !wanted.has(f.file) && !dji.badFigures(f)).map(f => f.file) });
 });
 // ---- owner tool: the decryption keys for DJI logs, so a new aircraft's records can be studied ----
 // Upload DJI flight records; get back each file's keychains (per-file keys from DJI, not the developer
@@ -322,7 +322,7 @@ pcRouter.post('/logbook/api/pc/need', express.json({ limit: '5mb' }), (req, res)
   const gone = new Set(store.state('deletedFiles', req.lb.id, []));     // deleted on purpose: don't send them again
   const need = (req.body?.files || []).filter(x => {
     const f = byFile.get(x.name);
-    return !gone.has(x.name) && (!f || !dji.isDone(f) || (f.bytes && x.bytes && f.bytes !== x.bytes));
+    return !gone.has(x.name) && (!f || !dji.isDone(f) || dji.badFigures(f) || (f.bytes && x.bytes && f.bytes !== x.bytes));
   }).map(x => x.name);
   res.json({ need });
 });
