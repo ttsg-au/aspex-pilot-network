@@ -528,7 +528,8 @@ async function impRefresh() {
   $('#impLog').textContent = j.uploads.length ? 'Recent imports:\n' + j.uploads.slice(0, 25).map(u => `  ${ago(u.at).padEnd(11)} ${u.file}  ${u.status}${u.track ? ' · ' + u.track : ''}  (${u.via})`).join('\n') + '\n' : '';
   const s = await (await fetch('api/settings')).json();
   $('#impKeyRow').hidden = s.role !== 'owner';   // only the owner (Aspex) sees and sets the DJI key
-  $('#impKeyHint').textContent = s.dji ? `key saved (ends ${s.djiHint})` : 'not set';
+  const kl = (s.djiKeyLog || [])[0];
+  $('#impKeyHint').textContent = (s.dji ? `key saved (ends ${s.djiHint})` : 'not set') + (kl ? ` – last changed ${new Date(kl.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })} by ${kl.by}` : '');
   $('#skyKeyHint').textContent = s.skydio ? `token saved (ends ${s.skydioHint})` : 'not set';
   $('#skySync').disabled = !s.skydio;
   $('#skyHint').textContent = !s.skydio ? 'Add your Skydio Cloud token under Settings below first.'

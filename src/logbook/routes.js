@@ -221,12 +221,20 @@ router.post('/logbook/api/profile', (req, res) => {
 });
 router.get('/logbook/api/settings', (req, res) => {
   const u = req.lb;
-  res.json({ name: u.name, email: u.email, role: u.role, dji: !!(u.djiApiKey || '').trim(), djiHint: u.djiApiKey ? '…' + u.djiApiKey.slice(-4) : '',
+  res.json({ name: u.name, email: u.email, role: u.role, dji: !!(u.djiApiKey || '').trim(), djiHint: u.djiApiKey ? '…' + u.djiApiKey.slice(-4) : '', djiKeyLog: u.role === 'owner' ? (u.djiKeyLog || []).slice(0, 5) : [],
     skydio: !!(u.skydioToken || '').trim(), skydioHint: u.skydioToken ? '…' + u.skydioToken.slice(-4) : '', skydioSyncedAt: u.skydioSyncedAt || '', skydioLast: u.skydioLast || null });
 });
 router.post('/logbook/api/settings', (req, res) => {
   const b = req.body || {}, ch = {};
-  if (typeof b.djiApiKey === 'string' && req.lb.role === 'owner') ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);   // only the owner sets the DJI key
+  if (typeof b.djiApiKey === 'string' && req.lb.role === 'owner' && b.djiApiKey.trim() !== (req.lb.djiApiKey || '')) {   // only the owner sets the DJI key
+    // Every change is recorded (when, who, from where) and emailed to the owner, so a change can't go unnoticed.
+    ch.djiApiKey = b.djiApiKey.trim().slice(0, 100);
+    const was = req.lb.djiApiKey ? '…' + req.lb.djiApiKey.slice(-4) : 'none';
+    ch.djiKeyLog = [{ at: new Date().toISOString(), by: req.lb.email, ip: req.ip, from: was, to: '…' + ch.djiApiKey.slice(-4) }, ...(req.lb.djiKeyLog || [])].slice(0, 20);
+    require('../mail').send({ to: req.lb.email, subject: 'Your DJI developer key was changed in the logbook',
+      text: `The DJI developer key in your Flight Logbook was changed on ${new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' })} (Sydney time), from the key ending ${was} to the key ending ${'…' + ch.djiApiKey.slice(-4)}, by ${req.lb.email} from address ${req.ip}.\n\nIf this wasn't you, change your logbook password straight away and paste your correct key back in (Import flights).` })
+      .catch(e => console.error('Key-change email failed:', e.message));
+  }
   if (typeof b.skydioToken === 'string') ch.skydioToken = b.skydioToken.trim().slice(0, 200);
   if (b.newUploadKey) ch.uploadKey = require('crypto').randomBytes(18).toString('base64url');
   db.update('lbUsers', req.lb.id, ch);
