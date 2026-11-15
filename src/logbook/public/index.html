@@ -461,6 +461,13 @@ async function openFlight(f, tr) {
       ${cell('Battery', batCell(f.batterySn))}${cell('Charge', f.batteryStartPct != null ? `${f.batteryStartPct}% → ${f.batteryEndPct}%` : '–')}${cell('Energy used', f.batteryUsedMah != null ? num(f.batteryUsedMah) + ' mAh' : '–')}
       ${cell('Battery capacity', f.batteryFullMah ? num(f.batteryFullMah) + ' mAh' : '–')}${cell('Lowest cell', f.minCellV != null ? num(f.minCellV, 2) + ' V' : '–')}${cell('Max battery temp', f.maxBatteryTempC != null ? num(f.maxBatteryTempC, 1) + ' °C' : '–')}
     </div>
+    ${f.batteries?.length > 1 ? `<div class="section">Both batteries</div>
+    <div class="grid">${f.batteries.map(b => `
+      ${cell(`Slot ${b.slot}`, b.slot === f.batterySlot ? batCell(f.batterySn) + (f.batteryCycles != null ? `<span class="sn-sub">${num(f.batteryCycles)} cycles</span>` : '') : '<span class="muted">serial not recorded by DJI</span>')}
+      ${cell('Charge', b.startPct != null ? `${b.startPct}% → ${b.endPct}%` : '–')}
+      ${cell('Max temp · lowest voltage', `${b.maxTempC != null ? num(b.maxTempC, 1) + ' °C' : '–'} · ${b.minV != null ? num(b.minV, 2) + ' V' : '–'}`)}`).join('')}
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">DJI records the serial number and cycle count of only one of the two batteries in each flight log.</div>` : ''}
     <div class="section">Source</div>
     <div class="muted sn" style="font-size:12px">${esc(f.file)}</div>
     <div class="section">Remove</div>

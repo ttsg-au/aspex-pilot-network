@@ -62,7 +62,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   // Network pilots without their own DJI developer key use Aspex's (the owner account's).
   const apiKey = (user.djiApiKey || db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
   // Flights read before the two-battery / hot-swap fixes can have impossible figures: read those again in full.
-  const badFigures = (f) => f && f.isFlight && (!(f.durationMin > 0) || f.durationMin > 180 || f.batteryCycles >= 1000 || (f.airMin > 0 && f.durationMin > 0 && f.airMin > f.durationMin * 1.5 + 1));
+  const badFigures = (f) => f && f.isFlight && (f.videoSec > 86400 || (/Matrice ?30/i.test(f.aircraftModel || '') && !f.batteries) || !(f.durationMin > 0) || f.durationMin > 180 || f.batteryCycles >= 1000 || (f.airMin > 0 && f.durationMin > 0 && f.airMin > f.durationMin * 1.5 + 1));
   if (existing && FINAL.has(existing.track) && !badFigures(existing)) {
     // Already logged. The only thing a re-import can add is a missing charge-cycle count, and it
     // changes nothing else on the flight (the pilot's CASA details stay as they are).
@@ -93,7 +93,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
       durationMin: round(d.totalTime / 60, 1),
       takeoffLat: round(d.latitude, 6), takeoffLon: round(d.longitude, 6),
       distanceKm: round(d.totalDistance, 2), maxHeightM: round(d.maxHeight, 1),
-      maxHSpeedMs: round(d.maxHorizontalSpeed, 1), photos: d.captureNum, videoSec: d.videoTime,
+      maxHSpeedMs: round(d.maxHorizontalSpeed, 1), photos: d.captureNum, videoSec: d.videoTime > Math.max(d.totalTime, 600) * 2 ? round(d.videoTime / 1000, 1) : d.videoTime,
       aircraftModel: modelName(d.productType), aircraftName: d.aircraftName, aircraftSn: d.aircraftSn,
       rcSn: d.rcSn, cameraSn: d.cameraSn, batterySn: d.batterySn,
       app: `${d.appPlatform} ${d.appVersion}`,
@@ -123,6 +123,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
           const cyc = batteryCycles(log, keychains);
           if (cyc.cycles != null) entry.batteryCycles = cyc.cycles;
           if (cyc.slot) entry.batterySlot = cyc.slot;              // two-battery aircraft: which slot DJI logged
+          if (cyc.batteries) entry.batteries = cyc.batteries;
           entry.batteryCyclesChecked = true; entry.batteryCyclesNote = cyc.note; entry.batteryCyclesVer = CYCLE_CHECK;
           const pts = trackPoints(frames, entry);
           if (pts.length >= 2) {
@@ -151,14 +152,24 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
 // The note says what the file held, so a missing count can be explained.
 function batteryCycles(log, keychains) {
   const seen = {}; let staticRec = null, center = null;
+  const packs = {};                               // two-battery aircraft: each slot's charge and temperature
   try {
     for (const r of log.records(keychains)) {
       seen[r.type] = (seen[r.type] || 0) + 1;
+      if (r.type === 'SmartBatteryGroup' && r.content.type === 'SmartBatteryDynamic' && r.content.index >= 1 && r.content.index <= 2) {
+        const c = r.content, p = (packs[c.index] ||= { slot: c.index, startPct: null, endPct: null, fullMah: null, maxTempC: -Infinity, minV: Infinity });
+        if (c.capacity_percent > 0 && c.capacity_percent <= 100) { if (p.startPct == null) p.startPct = c.capacity_percent; p.endPct = c.capacity_percent; }
+        if (c.full_capacity > 0 && c.full_capacity < 40000) p.fullMah = c.full_capacity;
+        if (c.temperature > -40 && c.temperature < 90 && c.temperature > p.maxTempC) p.maxTempC = c.temperature;
+        if (c.current_voltage > 5 && c.current_voltage < p.minV) p.minV = c.current_voltage;
+      }
       if (r.type === 'SmartBatteryGroup') seen['SBG:' + r.content.type] = (seen['SBG:' + r.content.type] || 0) + 1;
       if (!staticRec && r.type === 'SmartBatteryGroup' && r.content.type === 'SmartBatteryStatic') staticRec = r.content;
       if (!center && r.type === 'CenterBattery') center = r.content;
     }
   } catch (e) { return { cycles: null, note: 'records unreadable: ' + String(e?.message || e).slice(0, 120) }; }
+  const batteries = Object.values(packs).length > 1 ? Object.values(packs).map(p => ({ ...p,
+    maxTempC: Number.isFinite(p.maxTempC) ? round(p.maxTempC, 1) : null, minV: Number.isFinite(p.minV) ? round(p.minV, 2) : null })) : null;
   if (staticRec && staticRec.loop_times) {
     const v = staticRec.loop_times;
     // On newer aircraft (e.g. Mavic 3 Enterprise) the record has one extra byte, so the reader sees every
@@ -170,12 +181,12 @@ function batteryCycles(log, keychains) {
     const shifted = slot <= 3 && cap >= 1000 && cap <= 40000;
     const c = shifted ? (v >> 8) | ((staticRec.full_voltage & 0xff) << 8) : v;
     const raw = `raw loop_times ${v}, design ${dc}${shifted ? ` (${cap} mAh, slot ${slot})` : ' mAh'}, full ${staticRec.full_voltage}, life ${staticRec.battery_life}, type ${staticRec.battery_type}, version ${(staticRec.version_number || []).join('.')}`;
-    if (c < 3000) return { cycles: c, slot: shifted ? slot : null, note: raw };
+    if (c < 3000) return { cycles: c, slot: shifted ? slot : null, note: raw, batteries };
   }
-  if (center && center.numberOfDischarges) return { cycles: center.numberOfDischarges, note: 'CenterBattery numberOfDischarges' };
+  if (center && center.numberOfDischarges) return { cycles: center.numberOfDischarges, note: 'CenterBattery numberOfDischarges', batteries };
   const kinds = Object.entries(seen).filter(([k]) => /Battery|SBG/.test(k)).map(([k, n]) => `${k}×${n}`).join(', ') || 'no battery records';
   const detail = staticRec ? ` static: loop_times=${staticRec.loop_times}, design=${staticRec.designed_capacity}, life=${staticRec.battery_life}` : '';
-  return { cycles: null, note: `no cycle count (${kinds}${detail})` };
+  return { cycles: null, note: `no cycle count (${kinds}${detail})`, batteries };
 }
 
 function trackPoints(frames, entry) {
