@@ -61,7 +61,9 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const existing = store.flightBySha(uid, sha256);
   // Network pilots without their own DJI developer key use Aspex's (the owner account's).
   const apiKey = (user.djiApiKey || db.all('lbUsers').find(u => u.role === 'owner')?.djiApiKey || '').trim();
-  if (existing && FINAL.has(existing.track)) {
+  // Flights read before the two-battery / hot-swap fixes can have impossible figures: read those again in full.
+  const badFigures = (f) => f && f.isFlight && (!(f.durationMin > 0) || f.durationMin > 180 || f.batteryCycles >= 1000 || (f.airMin > 0 && f.durationMin > 0 && f.airMin > f.durationMin * 1.5 + 1));
+  if (existing && FINAL.has(existing.track) && !badFigures(existing)) {
     // Already logged. The only thing a re-import can add is a missing charge-cycle count, and it
     // changes nothing else on the flight (the pilot's CASA details stay as they are).
     if (!cycleCheck || !needsCycles(existing)) return { file, sha256, status: 'already had', flight: existing };
@@ -113,8 +115,14 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
         catch (e) { entry.track = 'track unreadable'; entry.trackError = String(e?.message || e); }
         if (frames) {
           Object.assign(entry, flightStats(frames, entry));
+          // The header's total time is wrong when the counter carried over or wrapped (a negative time on an M30).
+          if (!(entry.durationMin > 0) || entry.durationMin > 180) {
+            const s = airSeconds(frames);
+            if (s > 0) { entry.durationMin = round(s / 60, 1); entry.endLocal = local(new Date(start.getTime() + s * 1000)); }
+          }
           const cyc = batteryCycles(log, keychains);
           if (cyc.cycles != null) entry.batteryCycles = cyc.cycles;
+          if (cyc.slot) entry.batterySlot = cyc.slot;              // two-battery aircraft: which slot DJI logged
           entry.batteryCyclesChecked = true; entry.batteryCyclesNote = cyc.note; entry.batteryCyclesVer = CYCLE_CHECK;
           const pts = trackPoints(frames, entry);
           if (pts.length >= 2) {
@@ -156,10 +164,13 @@ function batteryCycles(log, keychains) {
     // On newer aircraft (e.g. Mavic 3 Enterprise) the record has one extra byte, so the reader sees every
     // field one byte early: designed capacity 5000 reads as 1280000 (5000 x 256). Then the real cycle count
     // is the high byte of loop_times plus, as its own high byte, the lowest byte of the next field.
-    const shifted = staticRec.designed_capacity % 256 === 0 && staticRec.designed_capacity >= 256 * 1000;
+    // The byte the reader takes as the capacity's lowest is really the battery's slot: 0 on single-battery
+    // aircraft, 1 or 2 on two-battery ones like the Matrice 30 (5880 mAh in slot 1 reads as 5880 x 256 + 1).
+    const dc = staticRec.designed_capacity, slot = dc & 0xff, cap = dc >> 8;
+    const shifted = slot <= 3 && cap >= 1000 && cap <= 40000;
     const c = shifted ? (v >> 8) | ((staticRec.full_voltage & 0xff) << 8) : v;
-    const raw = `raw loop_times ${v}, design ${staticRec.designed_capacity} mAh, full ${staticRec.full_voltage} mV, life ${staticRec.battery_life}, type ${staticRec.battery_type}, version ${(staticRec.version_number || []).join('.')}`;
-    if (c < 3000) return { cycles: c, note: raw };
+    const raw = `raw loop_times ${v}, design ${dc}${shifted ? ` (${cap} mAh, slot ${slot})` : ' mAh'}, full ${staticRec.full_voltage}, life ${staticRec.battery_life}, type ${staticRec.battery_type}, version ${(staticRec.version_number || []).join('.')}`;
+    if (c < 3000) return { cycles: c, slot: shifted ? slot : null, note: raw };
   }
   if (center && center.numberOfDischarges) return { cycles: center.numberOfDischarges, note: 'CenterBattery numberOfDischarges' };
   const kinds = Object.entries(seen).filter(([k]) => /Battery|SBG/.test(k)).map(([k, n]) => `${k}×${n}`).join(', ') || 'no battery records';
@@ -184,6 +195,18 @@ function trackPoints(frames, entry) {
 }
 
 // Per-flight numbers from the full telemetry (battery, air time, range).
+// Time in the air from the aircraft's own flight-time counter. On aircraft that hot-swap batteries
+// (Matrice 30, 300, 350) the counter keeps running from the previous flight instead of starting at 0,
+// and it wraps round after 6553.5 s - so add up its steps rather than taking its largest value.
+function airSeconds(frames) {
+  let sum = 0, prev = null;
+  for (const f of frames) {
+    const t = f.osd?.flyTime; if (!Number.isFinite(t)) continue;
+    if (prev != null) { let d = t - prev; if (d < -6000) d += 6553.6; if (d > 0 && d < 5) sum += d; }
+    prev = t;
+  }
+  return sum;
+}
 function flightStats(frames, e) {
   let first = null, last = null, minCell = Infinity, maxDev = 0, maxTemp = -Infinity, fullCap = 0;
   let maxFly = 0, maxRange = 0, home = null;
@@ -208,7 +231,7 @@ function flightStats(frames, e) {
     }
   }
   return {
-    airMin: maxFly ? round(maxFly / 60, 1) : e.durationMin,
+    airMin: (() => { const s = airSeconds(frames); return s ? round(s / 60, 1) : maxFly ? round(maxFly / 60, 1) : e.durationMin; })(),
     batteryStartPct: first?.chargeLevel ?? null,
     batteryEndPct: last?.chargeLevel ?? null,
     batteryUsedMah: first && last ? Math.max(0, Math.round(first.currentCapacity - last.currentCapacity)) : null,
