@@ -147,7 +147,8 @@ async function renderJobNetwork(key) {
       ${(net.sent || []).map(s => `<tr><td>${esc(s.name)}${s.agreement ? '' : ' <span class="pill bad">No agreement</span>'}</td><td>${esc(s.base)}</td>
         <td><select data-reply="${esc(s.pilotId)}" style="font:inherit;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:${s.answer === 'interested' ? 'var(--accent-soft)' : s.answer === 'unavailable' ? '#f1f3f4' : 'var(--warn-soft)'}">
             ${[['invited', 'No reply yet'], ['interested', 'Interested'], ['unavailable', 'Not available']].map(([v, l]) => `<option value="${v}"${s.answer === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
-          <div class="muted" style="font-size:12px">${s.answeredAt ? (s.byAspex ? 'recorded by you ' : 'replied ') + dateOnly(s.answeredAt.slice(0, 10)) : s.invitedAt ? 'sent ' + dateOnly(s.invitedAt.slice(0, 10)) : ''}</div></td>
+          <div class="muted" style="font-size:12px">${(() => { const d = (iso) => new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+            return s.answeredAt ? (s.byAspex ? 'recorded by you ' : 'replied ') + d(s.answeredAt) : s.invitedAt ? 'sent ' + d(s.invitedAt) : ''; })()}</div></td>
         <td><textarea data-rnote="${esc(s.pilotId)}" rows="1" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 5px" placeholder="days that suit, from their reply">${esc(s.note)}</textarea></td>
         <td>${s.assigned || s.agreement ? `<button class="btn sm ${s.assigned ? '' : 'ghost'}" data-assign="${esc(s.pilotId)}">${s.assigned ? '✓ Assigned' : 'Assign'}</button>` : '<span class="muted" style="font-size:12px">Agreement needed</span>'}</td></tr>`).join('')
         || '<tr><td colspan="5" class="muted">Not sent to anyone yet.</td></tr>'}</table>
