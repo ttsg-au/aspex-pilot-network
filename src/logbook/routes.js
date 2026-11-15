@@ -81,6 +81,10 @@ router.get('/logbook/api/approvals/:key/doc', (req, res) => {
   sendDoc(res, key && store.opsDoc(req.lb.id, 'approvals', key)?.item);
 });
 
+router.post('/logbook/api/flights/delete', (req, res) => {          // remove flights (e.g. someone else's files imported by mistake)
+  const shas = (Array.isArray(req.body?.shas) ? req.body.shas : []).filter(s => /^[\w-]{8,80}$/.test(s)).slice(0, 5000);
+  res.json({ deleted: store.deleteFlights(req.lb.id, shas) });
+});
 router.post('/logbook/api/flights/:sha', (req, res) => {          // CASA fields and notes on one flight
   const f = store.flightBySha(req.lb.id, req.params.sha);
   if (!f) return fail(res, 'no such flight', 404);
@@ -192,6 +196,7 @@ router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-
     const name = path.basename(String(req.query.name || ''));
     if (!/^(DJI)?FlightRecord_.*\.txt$/i.test(name)) return fail(res, 'That isn’t a DJI flight record (DJIFlightRecord_….txt)');
     const r = await dji.processFile(req.lb, req.body, name, { cycleCheck: true });   // only browser drops look again for cycles
+    const gone = store.state('deletedFiles', req.lb.id, []); if (gone.includes(name)) store.setState('deletedFiles', req.lb.id, gone.filter(n => n !== name));   // dropped in by hand: wanted again
     const line = { file: name, status: r.status, track: r.flight.track, via: 'browser' };
     if (r.status !== 'already had') store.noteUpload(req.lb.id, line);
     res.json({ ...line, summary: summary(r) });
@@ -314,9 +319,10 @@ pcRouter.use('/logbook/api/pc', (req, res, next) => {
 });
 pcRouter.post('/logbook/api/pc/need', express.json({ limit: '5mb' }), (req, res) => {
   const byFile = new Map(store.flights(req.lb.id).map(f => [f.file, f]));
+  const gone = new Set(store.state('deletedFiles', req.lb.id, []));     // deleted on purpose: don't send them again
   const need = (req.body?.files || []).filter(x => {
     const f = byFile.get(x.name);
-    return !f || !dji.isDone(f) || (f.bytes && x.bytes && f.bytes !== x.bytes);
+    return !gone.has(x.name) && (!f || !dji.isDone(f) || (f.bytes && x.bytes && f.bytes !== x.bytes));
   }).map(x => x.name);
   res.json({ need });
 });

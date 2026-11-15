@@ -462,8 +462,21 @@ async function openFlight(f, tr) {
       ${cell('Battery capacity', f.batteryFullMah ? num(f.batteryFullMah) + ' mAh' : '–')}${cell('Lowest cell', f.minCellV != null ? num(f.minCellV, 2) + ' V' : '–')}${cell('Max battery temp', f.maxBatteryTempC != null ? num(f.maxBatteryTempC, 1) + ' °C' : '–')}
     </div>
     <div class="section">Source</div>
-    <div class="muted sn" style="font-size:12px">${esc(f.file)}</div>`;
+    <div class="muted sn" style="font-size:12px">${esc(f.file)}</div>
+    <div class="section">Remove</div>
+    <div><button class="btn sm danger" id="delFlight">Delete this flight</button>
+      ${f.aircraftSn && all.filter(x => x.aircraftSn === f.aircraftSn).length > 1 ? `<button class="btn sm danger" id="delAircraft" style="margin-left:6px">Delete all ${all.filter(x => x.aircraftSn === f.aircraftSn).length} records from this aircraft</button>` : ''}
+      <div class="muted" style="font-size:12px;margin-top:4px">For records that aren't yours (for example another pilot's files imported by mistake). The flight, its track and its links are removed for good.</div></div>`;
   renderAssign(f); renderCasa(f);
+  const del = async (shas, what) => {
+    if (!confirm(`Delete ${what}? This can't be undone.`)) return;
+    const r = await fetch('api/flights/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ shas }) });
+    if (!r.ok) return toast(await r.text(), 3000);
+    const d = await r.json(); $('#dClose').click(); toast(`Deleted ${d.deleted} record${d.deleted === 1 ? '' : 's'}`); load();
+  };
+  $('#delFlight').onclick = () => del([f.sha256], 'this flight');
+  $('#delAircraft')?.addEventListener('click', () => { const s = all.filter(x => x.aircraftSn === f.aircraftSn).map(x => x.sha256);
+    del(s, `all ${s.length} records from aircraft ${f.aircraftSn} (${f.aircraftModel || 'unknown model'})`); });
   $('#drawer').classList.add('open');
 
   if (!map) {

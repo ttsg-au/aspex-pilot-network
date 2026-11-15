@@ -42,6 +42,18 @@ function putFlight(uid, entry) {
   return db.insert('lbFlights', { id, ...entry, uid });
 }
 // Flight numbers YYMMDD-n, counting real flights within each local day.
+// Delete flights for good: the record, its track file, and its job link. The file names are remembered so
+// the PC's Import Flights doesn't send them again (dropping a file in by hand still brings it back).
+function deleteFlights(uid, shas) {
+  let n = 0; const names = new Set(state('deletedFiles', uid, []));
+  for (const sha of shas) {
+    const f = flightBySha(uid, sha); if (!f) continue;
+    if (f.trackFile) db.deleteFile(f.trackFile);
+    db.remove('lbFlights', f.id); names.add(f.file); n++;
+  }
+  if (n) { setState('deletedFiles', uid, [...names].slice(-5000)); renumber(uid); }
+  return n;
+}
 function renumber(uid) {
   const list = flights(uid).sort((a, b) => (a.startUtc || '').localeCompare(b.startUtc || ''));
   const perDay = {};
@@ -223,5 +235,5 @@ async function claimUnowned(uid) {
 module.exports = { mergeTruncatedSerials,
   clean, flights, flightBySha, flightByFile, putFlight, renumber, publicFlight,
   getKeys, putKeys, inventory, saveInventory, ops, saveOps, putOps, opsDoc, keysOf, covers, updateSite, safeKey,
-  noteUpload, uploads, claimUnowned, state, setState,
+  deleteFlights, noteUpload, uploads, claimUnowned, state, setState,
 };
