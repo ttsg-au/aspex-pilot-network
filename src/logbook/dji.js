@@ -251,4 +251,4 @@ function csv(rows) {
   return '﻿' + lines.join('\r\n');
 }
 
-module.exports = { fetchKeys, processFile, isDone, needsCycles, kml, csv };
+module.exports = { fetchKeys, fetchKeysDirect, processFile, isDone, needsCycles, kml, csv };

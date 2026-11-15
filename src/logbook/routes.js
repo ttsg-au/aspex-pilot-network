@@ -150,13 +150,14 @@ router.get('/logbook/tools/keys', (req, res) => {
 <title>DJI log keys</title><body style="font:15px system-ui;max-width:640px;margin:30px auto;padding:0 16px">
 <h2>DJI log keys (for testing new aircraft)</h2>
 <p>Choose the DJI flight record files. Each one's decryption keys are fetched from DJI with your developer key, and you get one file, <b>dji-keychains.json</b>, to send to Claude. Nothing is added to your logbook.</p>
+<p><label><input type="checkbox" id="fresh"> Ask DJI again even for files already in the logbook (to test the key)</label></p>
 <input type="file" id="f" multiple accept=".txt"><p id="out"></p>
 <script>
 f.onchange = async () => {
   const all = {}; out.textContent = 'Working…';
   for (const file of f.files) {
     out.textContent = 'Fetching keys for ' + file.name + '…';
-    const r = await fetch('../api/tools/keychains?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+    const r = await fetch('../api/tools/keychains?name=' + encodeURIComponent(file.name) + (fresh.checked ? '&fresh=1' : ''), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
     const j = await r.json().catch(() => ({ error: 'bad reply' }));
     all[file.name] = j;
   }
@@ -176,11 +177,11 @@ router.post('/logbook/api/tools/keychains', raw('60mb'), async (req, res) => {
     if (log.version >= 13) dept = log.keychainsRequest().department;
     const sha = require('crypto').createHash('sha256').update(req.body).digest('hex');
     if (log.version < 13) return res.json({ sha, version: log.version, keychains: null, note: 'old format, no keys needed' });
-    let keychains = store.getKeys(sha);
+    let keychains = req.query.fresh ? null : store.getKeys(sha);
     if (!keychains) {
       const key = (req.lb.djiApiKey || '').trim();
       if (!key) return res.json({ error: 'no DJI developer key set in Settings' });
-      keychains = await dji.fetchKeys(log, key); store.putKeys(sha, keychains);
+      keychains = await (req.query.fresh ? dji.fetchKeysDirect : dji.fetchKeys)(log, key); store.putKeys(sha, keychains);
     }
     res.json({ sha, version: log.version, department: log.keychainsRequest().department, keychains });
   } catch (e) { res.json({ error: String(e?.message || e).slice(0, 200) + (dept != null ? ` (log department ${dept})` : '') }); }
