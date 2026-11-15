@@ -141,6 +141,49 @@ router.get('/logbook/api/import/skip', (req, res) => {
   const wanted = new Set(Object.values(latest).filter(dji.needsCycles).map(f => f.file));
   res.json({ skip: fl.filter(f => dji.isDone(f) && !wanted.has(f.file)).map(f => f.file) });
 });
+// ---- owner tool: the decryption keys for DJI logs, so a new aircraft's records can be studied ----
+// Upload DJI flight records; get back each file's keychains (per-file keys from DJI, not the developer
+// key itself) as a JSON file to send to Claude. Nothing is logged or changed.
+router.get('/logbook/tools/keys', (req, res) => {
+  if (req.lb.role !== 'owner') return res.status(403).type('text').send('Owner only.');
+  res.type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DJI log keys</title><body style="font:15px system-ui;max-width:640px;margin:30px auto;padding:0 16px">
+<h2>DJI log keys (for testing new aircraft)</h2>
+<p>Choose the DJI flight record files. Each one's decryption keys are fetched from DJI with your developer key, and you get one file, <b>dji-keychains.json</b>, to send to Claude. Nothing is added to your logbook.</p>
+<input type="file" id="f" multiple accept=".txt"><p id="out"></p>
+<script>
+f.onchange = async () => {
+  const all = {}; out.textContent = 'Working…';
+  for (const file of f.files) {
+    out.textContent = 'Fetching keys for ' + file.name + '…';
+    const r = await fetch('../api/tools/keychains?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+    const j = await r.json().catch(() => ({ error: 'bad reply' }));
+    all[file.name] = j;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(all)], { type: 'application/json' }));
+  a.download = 'dji-keychains.json'; a.click();
+  out.innerHTML = 'Done: <b>dji-keychains.json</b> has been downloaded. ' + Object.entries(all).map(([n, j]) => n + (j.error ? ' – ' + j.error : ' ✓')).join('<br>');
+};
+</script>`);
+});
+router.post('/logbook/api/tools/keychains', raw('60mb'), async (req, res) => {
+  if (req.lb.role !== 'owner') return res.status(403).json({ error: 'owner only' });
+  try {
+    const { DJILog } = await import('dji-log-parser-js');
+    const log = new DJILog(new Uint8Array(req.body));
+    const sha = require('crypto').createHash('sha256').update(req.body).digest('hex');
+    if (log.version < 13) return res.json({ sha, version: log.version, keychains: null, note: 'old format, no keys needed' });
+    let keychains = store.getKeys(sha);
+    if (!keychains) {
+      const key = (req.lb.djiApiKey || '').trim();
+      if (!key) return res.json({ error: 'no DJI developer key set in Settings' });
+      keychains = await log.fetchKeychains(key); store.putKeys(sha, keychains);
+    }
+    res.json({ sha, version: log.version, keychains });
+  } catch (e) { res.json({ error: String(e?.message || e).slice(0, 200) }); }
+});
+
 router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-and-drop .txt files in the browser
   try {
     const name = path.basename(String(req.query.name || ''));
