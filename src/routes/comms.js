@@ -233,7 +233,9 @@ function jobSummary(j) {
 }
 
 function defaultJobEmail(j) {
-  return `Hi {first_name},\n\nWe have a job coming up that may suit you. Details are below – please let me know if you're interested and available.\n\n${jobSummary(j)}\n\nKind regards,\nKimberly Olsen\nAspex Drone Services`;
+  return `Hi {first_name},\n\nWe have a job coming up that may suit you. Details are below.
+
+To reply, please use the "I'm interested" or "Not available" button at the bottom of this email, rather than replying to the email, so your answer is recorded against the job.\n\n${jobSummary(j)}\n\nKind regards,\nKimberly Olsen\nAspex Drone Services`;
 }
 
 function jobForm(j = {}, ids = []) {

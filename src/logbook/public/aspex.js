@@ -145,12 +145,13 @@ async function renderJobNetwork(key) {
     ${j.networkJobId ? `<h4>Pilots sent this job (${(net.sent || []).length})</h4>
     <table class="sum"><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assign</th></tr>
       ${(net.sent || []).map(s => `<tr><td>${esc(s.name)}${s.agreement ? '' : ' <span class="pill bad">No agreement</span>'}</td><td>${esc(s.base)}</td>
-        <td><span class="pill ${s.answer === 'interested' ? 'ok' : s.answer === 'unavailable' ? '' : 'warn'}">${s.answer === 'interested' ? 'Interested' : s.answer === 'unavailable' ? 'Not available' : 'No reply yet'}</span>
-          <div class="muted" style="font-size:12px">${s.answeredAt ? 'replied ' + dateOnly(s.answeredAt.slice(0, 10)) : s.invitedAt ? 'sent ' + dateOnly(s.invitedAt.slice(0, 10)) : ''}</div></td>
-        <td style="white-space:pre-wrap">${esc(s.note)}</td>
+        <td><select data-reply="${esc(s.pilotId)}" style="font:inherit;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:${s.answer === 'interested' ? 'var(--accent-soft)' : s.answer === 'unavailable' ? '#f1f3f4' : 'var(--warn-soft)'}">
+            ${[['invited', 'No reply yet'], ['interested', 'Interested'], ['unavailable', 'Not available']].map(([v, l]) => `<option value="${v}"${s.answer === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+          <div class="muted" style="font-size:12px">${s.answeredAt ? (s.byAspex ? 'recorded by you ' : 'replied ') + dateOnly(s.answeredAt.slice(0, 10)) : s.invitedAt ? 'sent ' + dateOnly(s.invitedAt.slice(0, 10)) : ''}</div></td>
+        <td><textarea data-rnote="${esc(s.pilotId)}" rows="1" style="width:100%;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:3px 5px" placeholder="days that suit, from their reply">${esc(s.note)}</textarea></td>
         <td>${s.assigned || s.agreement ? `<button class="btn sm ${s.assigned ? '' : 'ghost'}" data-assign="${esc(s.pilotId)}">${s.assigned ? '✓ Assigned' : 'Assign'}</button>` : '<span class="muted" style="font-size:12px">Agreement needed</span>'}</td></tr>`).join('')
         || '<tr><td colspan="5" class="muted">Not sent to anyone yet.</td></tr>'}</table>
-    <div class="muted" style="font-size:12px;margin:4px 0 12px">Assigning a pilot gives them this job in their logbook (site, map, safety, SWMS, capture settings, approvals), and they appear below. Click <b>✓ Assigned</b> again to unassign.</div>` : ''}
+    <div class="muted" style="font-size:12px;margin:4px 0 12px">If a pilot replied by email, set their reply and note here yourself. You can assign anyone with a signed agreement, whatever their reply. Assigning a pilot gives them this job in their logbook (site, map, safety, SWMS, capture settings, approvals), and they appear below. Click <b>✓ Assigned</b> again to unassign.</div>` : ''}
     ${j.networkJobId ? '<h4>Assigned pilots</h4>' : ''}
     ${j.networkJobId ? `<table class="sum"><tr><th>Pilot</th><th>Logbook</th><th>Accepted</th><th>Own checks done</th><th class="n">Flights</th><th class="n">Hours</th><th>Defects</th><th>Approval flags</th><th>Their approvals</th><th>Complete</th></tr>
       ${net.pilots.map(p => {
@@ -168,6 +169,12 @@ async function renderJobNetwork(key) {
           <td>${p.progress.completeAt ? dateOnly(p.progress.completeAt) : '–'}</td></tr>`;
       }).join('') || '<tr><td colspan="10" class="muted">No pilots assigned yet - use Assign in the list above.</td></tr>'}</table>
       ${net.pilots.some(p => p.flights.length) ? '<div id="netMap" style="height:340px;border-radius:8px;margin-top:8px"></div><div class="muted" style="font-size:12px;margin-top:4px">Pilot flight routes on this job. Click a route for details.</div>' : ''}` : ''}`;
+  const saveReply = async (pilotId, body) => {
+    const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network/reply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pilotId, ...body }) });
+    toast(r.ok ? 'Saved' : await r.text());
+  };
+  $('#jobNet').querySelectorAll('[data-reply]').forEach(s => s.onchange = async () => { await saveReply(s.dataset.reply, { answer: s.value }); renderJobNetwork(key); });
+  $('#jobNet').querySelectorAll('[data-rnote]').forEach(t => t.onchange = () => saveReply(t.dataset.rnote, { note: t.value.trim() }));
   $('#jobNet').querySelectorAll('[data-assign]').forEach(b => b.onclick = async () => {
     b.disabled = true;
     const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network/assign`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pilotId: b.dataset.assign }) });

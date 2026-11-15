@@ -237,9 +237,20 @@ router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
   const sent = db.where('jobResponses', r => r.jobId === x.job.networkJobId).map(r => {
     const p = db.get('pilots', r.pilotId) || {};
     return { pilotId: r.pilotId, name: p.fullName || '(deleted pilot)', base: p.homeBase || p.state || '', answer: r.answer || 'invited',
-      answeredAt: r.answeredAt || '', invitedAt: r.invitedAt || '', note: r.note || '', assigned: !!r.assigned, agreement: !!(p.id && M.agreementOf(p)) };
+      answeredAt: r.answeredAt || '', invitedAt: r.invitedAt || '', note: r.note || '', byAspex: !!r.recordedByAspex, assigned: !!r.assigned, agreement: !!(p.id && M.agreementOf(p)) };
   }).sort((a, b) => (b.assigned - a.assigned) || ((a.answer === 'interested' ? 0 : a.answer === 'invited' ? 1 : 2) - (b.answer === 'interested' ? 0 : b.answer === 'invited' ? 1 : 2)) || a.name.localeCompare(b.name));
   res.json({ pilots, sent, basis: BASIS.independent.label });
+});
+// Record a reply that came another way (e.g. the pilot replied to the email instead of using its buttons).
+router.post('/logbook/api/jobs/:key/network/reply', ownerOnly, (req, res) => {
+  const x = linkedJobs().find(l => l.key === req.params.key);
+  const r = x && db.all('jobResponses').find(y => y.jobId === x.job.networkJobId && y.pilotId === req.body?.pilotId);
+  if (!r) return res.status(404).type('text').send('That pilot wasn’t sent this job.');
+  const ch = {};
+  if (['interested', 'unavailable', 'invited'].includes(req.body.answer)) Object.assign(ch, { answer: req.body.answer, answeredAt: req.body.answer === 'invited' ? '' : db.now(), recordedByAspex: req.body.answer !== 'invited' });
+  if (typeof req.body.note === 'string') ch.note = req.body.note.slice(0, 2000);
+  db.update('jobResponses', r.id, ch);
+  res.json({ ok: true });
 });
 // Assign / unassign a pilot who was sent the job (same rule as the Jobs page: no signed agreement, no work).
 router.post('/logbook/api/jobs/:key/network/assign', ownerOnly, (req, res) => {
