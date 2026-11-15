@@ -31,6 +31,23 @@ const isDone = (f) => f && FINAL.has(f.track);
 const CYCLE_CHECK = 3;   // bump to let browser re-imports read the cycle count again
 const needsCycles = (f) => f && f.track === 'ok' && (f.batteryCycles == null ? !f.batteryCyclesChecked : f.batteryCyclesVer !== CYCLE_CHECK);
 
+// Ask DJI for a log's decryption keys. Done here rather than with the parser's own fetchKeychains, which
+// reports every failure as "Invalid Api Key" - this passes on DJI's actual answer (HTTP status and message).
+async function fetchKeys(log, apiKey) {
+  const body = JSON.stringify(log.keychainsRequest());
+  let res;
+  try {
+    res = await fetch('https://dev.dji.com/openapi/v1/flight-records/keychains', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Api-Key': apiKey }, body, signal: AbortSignal.timeout(30000) });
+  } catch (e) { throw new Error('couldn’t reach DJI (' + String(e?.message || e).slice(0, 80) + ')'); }
+  const text = await res.text();
+  let j = null; try { j = JSON.parse(text); } catch {}
+  if (!res.ok) throw new Error(`DJI said HTTP ${res.status}${j?.result?.msg ? ': ' + j.result.msg : text ? ': ' + text.slice(0, 160) : ''}`);
+  if (j?.result && j.result.code !== 0) throw new Error(`DJI said code ${j.result.code}: ${j.result.msg || ''}`);
+  if (!Array.isArray(j?.data)) throw new Error('DJI sent no keys back');
+  return j.data;
+}
+
 async function processFile(user, buf, file, { cycleCheck = false } = {}) {
   const uid = user.id;
   const DJILog = await loadParser();
@@ -46,7 +63,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
     try {
       const log = new DJILog(new Uint8Array(buf));
       let keys = store.getKeys(sha256);
-      if (!keys && apiKey && log.version >= 13) { keys = await log.fetchKeychains(apiKey); store.putKeys(sha256, keys); }
+      if (!keys && apiKey && log.version >= 13) { keys = await fetchKeys(log, apiKey); store.putKeys(sha256, keys); }
       if (!keys && log.version >= 13) return { file, sha256, status: 'already had', flight: existing, note: 'add the DJI key in Settings to read its battery cycles' };
       const cyc = batteryCycles(log, keys);
       note = cyc.note;
@@ -80,7 +97,7 @@ async function processFile(user, buf, file, { cycleCheck = false } = {}) {
       if (log.version >= 13) {
         keychains = store.getKeys(sha256);
         if (!keychains && apiKey) {
-          try { keychains = await log.fetchKeychains(apiKey); store.putKeys(sha256, keychains); }
+          try { keychains = await fetchKeys(log, apiKey); store.putKeys(sha256, keychains); }
           catch (e) { keyError = String(e?.message || e); }
         }
       }
@@ -228,4 +245,4 @@ function csv(rows) {
   return '﻿' + lines.join('\r\n');
 }
 
-module.exports = { processFile, isDone, needsCycles, kml, csv };
+module.exports = { fetchKeys, processFile, isDone, needsCycles, kml, csv };

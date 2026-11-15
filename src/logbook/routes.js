@@ -169,19 +169,21 @@ f.onchange = async () => {
 });
 router.post('/logbook/api/tools/keychains', raw('60mb'), async (req, res) => {
   if (req.lb.role !== 'owner') return res.status(403).json({ error: 'owner only' });
+  let dept = null;
   try {
     const { DJILog } = await import('dji-log-parser-js');
     const log = new DJILog(new Uint8Array(req.body));
+    if (log.version >= 13) dept = log.keychainsRequest().department;
     const sha = require('crypto').createHash('sha256').update(req.body).digest('hex');
     if (log.version < 13) return res.json({ sha, version: log.version, keychains: null, note: 'old format, no keys needed' });
     let keychains = store.getKeys(sha);
     if (!keychains) {
       const key = (req.lb.djiApiKey || '').trim();
       if (!key) return res.json({ error: 'no DJI developer key set in Settings' });
-      keychains = await log.fetchKeychains(key); store.putKeys(sha, keychains);
+      keychains = await dji.fetchKeys(log, key); store.putKeys(sha, keychains);
     }
-    res.json({ sha, version: log.version, keychains });
-  } catch (e) { res.json({ error: String(e?.message || e).slice(0, 200) }); }
+    res.json({ sha, version: log.version, department: log.keychainsRequest().department, keychains });
+  } catch (e) { res.json({ error: String(e?.message || e).slice(0, 200) + (dept != null ? ` (log department ${dept})` : '') }); }
 });
 
 router.post('/logbook/api/upload', raw('60mb'), async (req, res) => {   // drag-and-drop .txt files in the browser
