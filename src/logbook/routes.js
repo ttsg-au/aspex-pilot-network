@@ -50,7 +50,11 @@ router.get('/logbook/api/towercheck', (req, res) => {
 router.get('/logbook/api/inventory', (req, res) => res.json(store.inventory(req.lb.id)));
 router.post('/logbook/api/inventory', (req, res) => res.json(store.saveInventory(req.lb.id, req.body || {})));
 router.get('/logbook/api/ops', (req, res) => res.json(store.ops(req.lb.id)));
-router.post('/logbook/api/ops', express.json({ limit: '2mb' }), (req, res) => res.json(store.saveOps(req.lb.id, req.body || {})));
+router.post('/logbook/api/ops', express.json({ limit: '2mb' }), (req, res) => {
+  const out = store.saveOps(req.lb.id, req.body || {});
+  try { require('./network').syncStatuses(req.lb.id, req.body); } catch (e) { console.error('Status sync:', e.message); }
+  res.json(out);
+});
 // ---- approval documents (the PDF or image of the approval itself) ----
 const DOC_TYPES = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg' };
 router.post('/logbook/api/approvals/:key/doc', raw('15mb'), async (req, res) => {
@@ -213,7 +217,7 @@ router.post('/logbook/api/upload-ebee', express.json({ limit: '10mb' }), async (
 // The logbook owner's own pilot details (remote pilot log header).
 const PROFILE = { fullName: 120, arn: 20, replNo: 40, replClass: 200, replExpiry: 10, insuranceExpiry: 10, otherQuals: 1000, defaultOpType: 5, remindersOff: 1 };
 const reminders = require('./reminders');
-router.get('/logbook/api/reminders', (req, res) => res.json(reminders.itemsFor(req.lb)));
+router.get('/logbook/api/reminders', async (req, res) => res.json(await reminders.allItems(req.lb)));
 router.post('/logbook/api/reminders/send', async (req, res) => {
   try { const r = await reminders.sendTo(db.get('lbUsers', req.lb.id), { force: true }); res.json({ ok: true, to: req.lb.email, sent: r.sent }); }
   catch (e) { fail(res, 'Couldn\u2019t send the email: ' + (e.message || e), 500); }

@@ -11,9 +11,11 @@ const STAGES = [
   { id: 'registered', label: 'Registered', hint: 'Form received, not yet contacted' },
   { id: 'contacted', label: 'Contacted', hint: 'Next steps sent' },
   { id: 'vetted', label: 'Credentials checked', hint: 'ARN, accreditation/RePL, insurance verified' },
-  { id: 'inducted', label: 'Inducted', hint: 'Aspex procedures and safety briefing done' },
-  { id: 'supervised', label: 'Supervised work', hint: 'Flying alongside or under supervision' },
-  { id: 'approved', label: 'Approved for solo work', hint: 'Can be sent on jobs alone' },
+  // Part A pilots (sub-2 kg, independent operators) go straight from "Credentials checked" to "Approved" once their
+  // agreement is signed. "Inducted" and "Supervised work" are only for Part B (ReOC operations).
+  { id: 'inducted', label: 'Inducted (Part B only)', hint: 'Part B (ReOC operations) only: procedures and safety briefing done' },
+  { id: 'supervised', label: 'Supervised work (Part B only)', hint: 'Part B (ReOC operations) only: flying alongside or under supervision' },
+  { id: 'approved', label: 'Approved for solo work', hint: 'Part A: agreement signed and credentials checked. Part B: also inducted and supervised work done' },
   { id: 'on_hold', label: 'On hold', hint: 'Not available or paused' },
   { id: 'not_proceeding', label: 'Not proceeding', hint: 'Not suitable or withdrew' },
 ];
@@ -39,10 +41,10 @@ const qualLabel = (id) => (QUAL_TYPES.find(q => q.id === id) || { label: id }).l
 const RECORD_TYPES = [
   { id: 'note', label: 'Note / phone call' },
   { id: 'agreement', label: 'Contractor agreement signed' },
-  { id: 'induction_procedures', label: 'Aspex procedures & safety induction' },
-  { id: 'induction_opsmanual', label: 'Ops manual induction (ReOC)', reoc: true },
-  { id: 'competency_check', label: 'Competency / proficiency check', reoc: true },
-  { id: 'supervised_job', label: 'Supervised job completed' },
+  { id: 'induction_procedures', label: 'Procedures & safety induction (Part B only)', reoc: true },
+  { id: 'induction_opsmanual', label: 'Ops manual induction (Part B only)', reoc: true },
+  { id: 'competency_check', label: 'Competency / proficiency check (Part B only)', reoc: true },
+  { id: 'supervised_job', label: 'Supervised job completed (Part B only)', reoc: true },
   { id: 'site_induction', label: 'Client site induction' },
   { id: 'incident', label: 'Incident / occurrence' },
 ];
@@ -103,9 +105,10 @@ function readiness(p) {
     { label: 'Public liability insurance', ok: !!verified('insurance'), have: !!has('insurance') },
     { label: 'White Card', ok: !!verified('white_card'), have: !!has('white_card') },
     { label: 'Signed contractor agreement', ok: !!agreementOf(p), have: !!agreementOf(p) },
-    { label: 'Aspex procedures & safety induction', ok: !!did('induction_procedures'), have: !!did('induction_procedures') },
   ];
+  // Part B only (ReOC operations). Part A pilots are independent operators and don't need these.
   const reoc = [
+    { label: 'Procedures & safety induction', ok: !!did('induction_procedures'), have: !!did('induction_procedures') },
     { label: 'RePL verified', ok: !!verified('repl'), have: !!has('repl') },
     { label: 'Inducted into Aspex ops manual', ok: !!did('induction_opsmanual'), have: !!did('induction_opsmanual') },
     { label: 'Competency check in last 12 months', ok: recs.some(r => r.type === 'competency_check' && (r.date || '') >= yearAgo), have: !!did('competency_check') },

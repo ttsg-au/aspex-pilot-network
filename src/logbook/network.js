@@ -45,6 +45,15 @@ function matchFlights(uid, job, site) {
     .sort((a, b) => a.startLocal.localeCompare(b.startLocal));
 }
 const progress = (uid) => store.state('aspexjobs', uid, {});
+// The job reply (email or logbook). Accepting the job in either place records the terms here.
+const responseOf = (networkJobId, pilotId) => db.all('jobResponses').find(r => r.jobId === networkJobId && r.pilotId === pilotId);
+// A pilot's progress on a job, with acceptance from the email counted as accepted in the logbook too.
+function progressFor(uid, pilotId, key, networkJobId) {
+  const p = { ...((uid && progress(uid)[key]) || {}) };
+  const r = responseOf(networkJobId, pilotId);
+  if (!p.ackAt && r?.termsAt) Object.assign(p, { ackAt: r.termsAt, ackVia: r.termsBy || 'email' });
+  return p;
+}
 const setProgress = (uid, v) => store.setState('aspexjobs', uid, v);
 const flightOut = (f) => ({ sha256: f.sha256, file: f.file, flightNo: f.flightNo, startLocal: f.startLocal, endLocal: f.endLocal, durationMin: f.durationMin,
   aircraftModel: f.aircraftModel, aircraftSn: f.aircraftSn, batterySn: f.batterySn, maxHeightM: f.maxHeightM, distanceKm: f.distanceKm,
@@ -87,7 +96,7 @@ function jobsFor(u) {
     siteContactName: job.siteContactName, siteContactPhone: job.siteContactPhone, safety: job.safety, safetyNotes: job.safetyNotes,
     approvalRequired: job.approvalRequired === '1', approvalNote: job.approvalNote || '',
     approvals: [...ownerApprovals(key, job), ...pilotApprovals(u.id, key, job)],
-    site: siteOut(site), progress: prog[key] || {},
+    site: siteOut(site), progress: progressFor(u.id, u.pilotId, key, job.networkJobId),
     flights: matchFlights(u.id, job, site).map(flightOut),
   }));
 }
@@ -108,7 +117,12 @@ router.post('/logbook/api/aspex-jobs/:key/ack', (req, res) => {
   if (ticks.length !== j.basis.acks.length || !ticks.every(Boolean)) return res.status(400).type('text').send('Tick all three to accept the job.');
   const p = progress(req.lb.id);
   p[j.key] = { ...(p[j.key] || {}), ackAt: new Date().toISOString(), ackBasis: 'independent', ackText: j.basis.acks };
-  setProgress(req.lb.id, p); res.json(p[j.key]);
+  setProgress(req.lb.id, p);
+  // The same acceptance as the email's "Accept this job": record it on the job reply too.
+  const job = linkedJobs().find(x => x.key === j.key)?.job, r = job && responseOf(job.networkJobId, req.lb.pilotId);
+  if (r) db.update('jobResponses', r.id, { answer: 'interested', answeredAt: r.answer === 'interested' && r.answeredAt ? r.answeredAt : db.now(),
+    termsAt: p[j.key].ackAt, termsBy: 'logbook', termsText: j.basis.acks });
+  res.json(p[j.key]);
 });
 router.post('/logbook/api/aspex-jobs/:key/day', (req, res) => {          // "I did my own pre-flight checks" for a day
   const j = myJob(req, res); if (!j) return;
@@ -193,6 +207,17 @@ function calloutDetails(j, site, airspace) {
 // into the logbook job where the logbook job has none.
 const CARRY = [['purpose', 'client'], ['start', 'startDate'], ['end', 'endDate'], ['town', 'location'], ['state', 'state'],
   ['daysNeeded', 'daysNeeded'], ['payNotes', 'payNotes'], ['requirements', 'requirements'], ['respondBy', 'respondBy']];
+// The logbook job's status drives the call-out's status on the admin Jobs page.
+const CALLOUT_STATUS = { Planned: 'open', Booked: 'filled', Flown: 'completed', Delivered: 'completed', Invoiced: 'completed', Cancelled: 'cancelled' };
+const calloutStatus = (j) => CALLOUT_STATUS[j.status || 'Planned'] || 'open';
+function syncStatuses(uid, patch) {
+  const u = db.get('lbUsers', uid); if (!u || u.role !== 'owner' || !patch?.jobs) return;
+  const ops = store.ops(uid);
+  for (const key of Object.keys(patch.jobs)) {
+    const j = ops.jobs[key], nj = j?.networkJobId && db.get('jobs', j.networkJobId);
+    if (nj && nj.status !== calloutStatus(j)) db.update('jobs', nj.id, { status: calloutStatus(j) });
+  }
+}
 function syncCallout(uid, key, airspace) {
   let ops = store.ops(uid); let j = ops.jobs[key];
   if (!j) return null;
@@ -203,11 +228,11 @@ function syncCallout(uid, key, airspace) {
     if (Object.keys(back).length) { store.saveOps(uid, { jobs: { [key]: back } }); ops = store.ops(uid); j = ops.jobs[key]; }
   }
   const site = ops.sites[j.siteId];
-  const fields = { title: j.name || 'Aspex job', site: site?.name || '', details: calloutDetails(j, site, airspace), logbookJob: key };
+  const fields = { title: j.name || 'Aspex job', site: site?.name || '', details: calloutDetails(j, site, airspace), logbookJob: key, status: calloutStatus(j) };
   for (const [lk, ck] of CARRY) fields[ck] = j[lk] || '';
   if (nj) nj = db.update('jobs', nj.id, fields) || nj;
   else {
-    nj = db.insert('jobs', { ...fields, part: 'any', privateNotes: '', status: 'open' });
+    nj = db.insert('jobs', { ...fields, part: 'any', privateNotes: '' });
     store.saveOps(uid, { jobs: { [key]: { networkJobId: nj.id } } });
   }
   return nj;
@@ -230,7 +255,7 @@ router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
     const fl = u ? matchFlights(u.id, x.job, x.site) : [];
     const chk = u && fl.length ? (await require('./compliance').checkFlights(u.id, fl, aspexApprovalsFor(u))).flights : {};
     return { pilotId: pid, name: p.fullName || '(deleted pilot)', uid: u?.id || '', hasLogbook: !!u, active: !!u?.pwHash,
-      progress: u ? (progress(u.id)[x.key] || {}) : {}, flights: fl.map(f => ({ ...flightOut(f), check: chk[f.sha256] || null })),
+      progress: progressFor(u?.id, pid, x.key, x.job.networkJobId), flights: fl.map(f => ({ ...flightOut(f), check: chk[f.sha256] || null })),
       approvals: u ? pilotApprovals(u.id, x.key, x.job) : [] };
   }));
   // Everyone the job was sent to, with their reply, so replies and assigning are in the logbook job itself.
@@ -238,7 +263,7 @@ router.get('/logbook/api/jobs/:key/network', ownerOnly, async (req, res) => {
   const sent = db.where('jobResponses', r => r.jobId === x.job.networkJobId).map(r => {
     const p = db.get('pilots', r.pilotId) || {};
     return { pilotId: r.pilotId, name: p.fullName || '(deleted pilot)', base: p.homeBase || p.state || '', answer: r.answer || 'invited',
-      answeredAt: r.answeredAt || '', invitedAt: r.invitedAt || '', note: r.note || '', byAspex: !!r.recordedByAspex, dayRate: p.dayRate || '', assigned: !!r.assigned, agreement: !!(p.id && M.agreementOf(p)) };
+      answeredAt: r.answeredAt || '', invitedAt: r.invitedAt || '', note: r.note || '', byAspex: !!r.recordedByAspex, termsAt: r.termsAt || '', termsBy: r.termsBy || '', dayRate: p.dayRate || '', assigned: !!r.assigned, agreement: !!(p.id && M.agreementOf(p)) };
   }).sort((a, b) => (b.assigned - a.assigned) || ((a.answer === 'interested' ? 0 : a.answer === 'invited' ? 1 : 2) - (b.answer === 'interested' ? 0 : b.answer === 'invited' ? 1 : 2)) || a.name.localeCompare(b.name));
   res.json({ pilots, sent, jobRate: x.job.payNotes || '', basis: BASIS.independent.label });
 });
@@ -248,7 +273,8 @@ router.post('/logbook/api/jobs/:key/network/reply', ownerOnly, (req, res) => {
   const r = x && db.all('jobResponses').find(y => y.jobId === x.job.networkJobId && y.pilotId === req.body?.pilotId);
   if (!r) return res.status(404).type('text').send('That pilot wasn’t sent this job.');
   const ch = {};
-  if (['interested', 'unavailable', 'invited'].includes(req.body.answer)) Object.assign(ch, { answer: req.body.answer, answeredAt: req.body.answer === 'invited' ? '' : db.now(), recordedByAspex: req.body.answer !== 'invited' });
+  if (['interested', 'unavailable', 'invited'].includes(req.body.answer)) Object.assign(ch, { answer: req.body.answer, answeredAt: req.body.answer === 'invited' ? '' : db.now(), recordedByAspex: req.body.answer !== 'invited',
+    ...(req.body.answer !== 'interested' ? { termsAt: '', termsBy: '' } : {}) });   // you can record a yes, but only the pilot can agree to the terms
   if (typeof req.body.note === 'string') ch.note = req.body.note.slice(0, 2000);
   db.update('jobResponses', r.id, ch);
   res.json({ ok: true });
@@ -328,4 +354,4 @@ function fillCalloutFromLogbook(networkJobId, key) {
   return !!syncCallout(o.id, key, null);
 }
 
-module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor, logbookJobsForCallout, fillCalloutFromLogbook };
+module.exports = { router, BASIS, jobsFor, sendDoc, pilotApprovalsForJob, aspexApprovalsFor, logbookJobsForCallout, fillCalloutFromLogbook, syncStatuses };

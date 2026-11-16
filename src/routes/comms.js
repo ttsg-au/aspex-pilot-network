@@ -369,7 +369,8 @@ router.get('/jobs/:id', (req, res) => {
 <div class="head"><div><a href="/jobs" class="muted">← Jobs</a><h1>${esc(j.title)}</h1>
 <div class="sub">${badge(jobStatusLabel(j.status), j.status === 'open' ? 'warn' : 'good')} ${esc([j.location, j.state].filter(Boolean).join(', '))} · ${fmtDate(j.startDate)}${isWindow(j) ? ' – ' + fmtDate(j.endDate) : ''}${j.daysNeeded ? ' · ' + esc(j.daysNeeded) + ' on site' : ''}</div></div>
 ${lb.linkedKey ? `<a class="btn ghost" href="/logbook/#jobs/${encodeURIComponent(lb.linkedKey)}">Edit job in the logbook</a>` : ''}
-<form method="post" action="/jobs/${j.id}/status" class="stages">${JOB_STATUS.map(([v, l]) => `<button name="status" value="${v}" class="${j.status === v ? 'on' : ''}">${l}</button>`).join('')}</form></div>
+${lb.linkedKey ? `<p class="sub">Status follows the logbook job: Planned = Open, Booked = Filled, Flown / Delivered / Invoiced = Completed, Cancelled = Cancelled. Change it on the logbook job.</p>`
+  : `<form method="post" action="/jobs/${j.id}/status" class="stages">${JOB_STATUS.map(([v, l]) => `<button name="status" value="${v}" class="${j.status === v ? 'on' : ''}">${l}</button>`).join('')}</form>`}</div>
 
 <section class="card"><h2>Responses</h2>
 <div class="tablewrap"><table class="list"><thead><tr><th>Pilot</th><th>Base</th><th>Reply</th><th>Note / days that suit</th><th>Assigned</th></tr></thead><tbody>
@@ -440,6 +441,9 @@ ${c.job.status !== 'open' ? '<p class="flash warn">This job is no longer open, b
 <form method="post" style="border:3px solid ${yes ? '#0f5e9c' : '#8a96a0'};border-radius:10px;padding:16px 18px;margin:18px 0">
 <h2 style="margin:0 0 6px">${yes ? 'One more step: confirm you accept this job' : 'One more step: confirm you’re declining'}</h2>
 <p style="margin:0 0 10px">Hi ${esc(M.firstName(c.pilot))}, your answer <b>isn’t sent until you press the button below</b>.</p>
+${yes ? `<p style="margin:10px 0 6px"><b>By accepting this job you confirm:</b></p>
+${require('../logbook/network').BASIS.independent.acks.map((a, i) => `<label class="inline" style="display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;font-weight:normal"><input type="checkbox" name="t${i}" value="1" required style="margin-top:4px"> <span>${esc(a)}</span></label>`).join('')}
+<p class="sub" style="margin:0 0 10px">The SWMS link is in the job details below.</p>` : ''}
 <label>${yes && isWindow(c.job) ? 'Which days within the window can you do?' : 'Anything to add? (optional)'}<textarea name="note" rows="3" placeholder="${yes ? (isWindow(c.job) ? 'e.g. the 12th and 13th, or any two days after the 10th' : 'e.g. can bring my own Mavic 3T') : ''}">${esc(c.resp && c.resp.note)}</textarea></label>
 <button style="font-size:17px;padding:12px 22px">${yes ? 'Confirm – I accept this job' : 'Confirm – I decline'}</button>
 </form>
@@ -450,7 +454,12 @@ ${c.job.status !== 'open' ? '<p class="flash warn">This job is no longer open, b
 publicRouter.post('/r/:jobId/:pilotId/:answer/:token', (req, res) => {
   const c = responseContext(req);
   if (!c) return res.status(404).send(bare({ title: 'Link not valid', body: '<h1>This link isn’t valid</h1>' }));
-  const fields = { answer: c.answer, answeredAt: db.now(), note: String((req.body && req.body.note) || '').slice(0, 2000) };
+  const acks = require('../logbook/network').BASIS.independent.acks;
+  if (c.answer === 'interested' && !acks.every((_, i) => req.body && req.body['t' + i]))
+    return res.status(400).send(bare({ title: 'Please tick all three', body: '<h1>Please tick all three statements</h1><p>Go back and tick each statement to accept the job.</p>' }));
+  // Accepting here is the one acceptance: it also counts as agreeing to the job terms in the logbook.
+  const fields = { answer: c.answer, answeredAt: db.now(), note: String((req.body && req.body.note) || '').slice(0, 2000),
+    ...(c.answer === 'interested' ? { termsAt: db.now(), termsBy: 'email', termsText: acks } : { termsAt: '', termsBy: '' }) };
   if (c.resp) db.update('jobResponses', c.resp.id, fields);
   else db.insert('jobResponses', { jobId: c.job.id, pilotId: c.pilot.id, invitedAt: db.now(), assigned: false, ...fields });
   // Let you know straight away.

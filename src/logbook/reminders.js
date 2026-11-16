@@ -85,15 +85,33 @@ function itemsFor(u) {
   out.batteries.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return out;
 }
-const count = (it) => it.paperwork.length + it.approvals.length + it.drones.length + it.batteries.length;
+const count = (it) => it.paperwork.length + it.approvals.length + it.drones.length + it.batteries.length + (it.flights || []).length;
+
+// Last week's flights that the approvals check flagged (not covered by an approval, or in a NOTAM-only area).
+async function flaggedFlights(u) {
+  const from = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+  const recent = store.flights(u.id).filter(f => f.isFlight && String(f.startLocal || '') >= from);
+  if (!recent.length) return [];
+  const extra = u.role === 'owner' ? [] : network.aspexApprovalsFor(u);
+  const { flights } = await require('./compliance').checkFlights(u.id, recent, extra);
+  return recent.filter(f => ['flag', 'check'].includes(flights[f.sha256]?.status)).map(f => {
+    const c = flights[f.sha256], why = c.issues.filter(i => !i.ok).map(i => i.text).join('; ');
+    return { level: c.status === 'flag' ? 'red' : 'amber', text: `${f.flightNo || ''} ${String(f.startLocal).slice(0, 16)} ${f.aircraftModel || ''}: ${c.status === 'flag' ? 'not covered by an approval' : 'check'} - ${why}.`.replace(/\s+/g, ' ').trim() };
+  });
+}
+async function allItems(u) {
+  const it = itemsFor(u);
+  try { it.flights = await flaggedFlights(u); } catch (e) { it.flights = []; console.error('Flagged flights for reminder:', e.message); }
+  return it;
+}
 
 async function sendTo(u, { force = false } = {}) {
-  const it = itemsFor(u);
+  const it = await allItems(u);
   if (!count(it) && !force) return { sent: false, items: it };
   const sec = (title, list) => list.length ? `**${title}**\n${list.map(x => `${x.level === 'red' ? '🔴' : '🟠'} ${x.text}`).join('\n')}\n\n` : '';
   const first = (u.profile?.fullName || u.name || '').split(' ')[0] || 'there';
   const text = count(it)
-    ? `Hi ${first},\n\nHere's what's coming up in your flight logbook:\n\n${sec('Licences and paperwork', it.paperwork)}${sec('Approvals', it.approvals)}${sec('Drones', it.drones)}${sec('Batteries', it.batteries)}You get this email on Mondays when something is due. You can turn it off on the Me tab in your logbook.`
+    ? `Hi ${first},\n\nHere's what's coming up in your flight logbook:\n\n${sec('Licences and paperwork', it.paperwork)}${sec('Approvals', it.approvals)}${sec('Drones', it.drones)}${sec('Batteries', it.batteries)}${sec('Flights in the last week to check against your approvals', it.flights || [])}You get this email on Mondays when something is due. You can turn it off on the Me tab in your logbook.`
     : `Hi ${first},\n\nNothing is due in your flight logbook right now. This is a test of your weekly reminder email.`;
   await mail.send({ to: u.email, subject: count(it) ? `Flight logbook: ${count(it)} thing${count(it) === 1 ? '' : 's'} need${count(it) === 1 ? 's' : ''} attention` : 'Flight logbook reminders (test)',
     text, buttons: [{ label: 'Open my logbook', url: `${config.baseUrl}/logbook/`, primary: true }] });
@@ -118,4 +136,4 @@ function start() {
   setInterval(() => weeklyCheck().catch(() => {}), 60 * 60e3).unref?.();
 }
 
-module.exports = { itemsFor, sendTo, start };
+module.exports = { itemsFor, allItems, sendTo, start };
