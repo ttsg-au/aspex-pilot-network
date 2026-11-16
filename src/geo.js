@@ -15,6 +15,9 @@ const queryFor = (p) => {
   return base + ', Australia';
 };
 
+// "Queensland" -> "QLD" (the state a map search result is in), or '' if it isn't an Australian state.
+const stateCode = (name) => Object.keys(STATES).find(k => STATES[k].toLowerCase() === String(name || '').trim().toLowerCase()) || '';
+
 // A pilot needs a lookup when they have a home base and no saved position for it.
 const needsLookup = (p) => {
   const q = queryFor(p);
@@ -24,15 +27,15 @@ const needsLookup = (p) => {
 
 async function lookup(q) {
   if (process.env.GEO_STUB) { // for local testing without internet
-    if (process.env.GEO_STUB.endsWith('.json')) { const t = require(process.env.GEO_STUB); const k = Object.keys(t).find(k => q.toLowerCase().startsWith(k.toLowerCase())); return k ? { lat: t[k][0], lng: t[k][1], label: k } : null; }
+    if (process.env.GEO_STUB.endsWith('.json')) { const t = require(process.env.GEO_STUB); const k = Object.keys(t).find(k => q.toLowerCase().startsWith(k.toLowerCase())); return k ? { lat: t[k][0], lng: t[k][1], label: k, state: t[k][2] || '' } : null; }
     const h = [...q].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
     return { lat: -25 - (h % 1000) / 100, lng: 120 + (h % 2900) / 100, label: q };
   }
-  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=au&q=' + encodeURIComponent(q);
+  const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=au&addressdetails=1&q=' + encodeURIComponent(q);
   const res = await fetch(url, { headers: { 'User-Agent': 'AspexPilotNetwork/1.0 (admin@aspex.com.au)', 'Accept-Language': 'en-AU' } });
   if (!res.ok) throw new Error('lookup failed ' + res.status);
   const [hit] = await res.json();
-  return hit ? { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name } : null;
+  return hit ? { lat: Number(hit.lat), lng: Number(hit.lon), label: hit.display_name, state: stateCode(hit.address?.state) } : null;
 }
 
 let running = false;

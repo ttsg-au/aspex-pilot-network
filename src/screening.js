@@ -61,23 +61,34 @@ function saveSettings(changes) {
   else db.insert('settings', { ...DEFAULTS, ...changes });
 }
 
-// Work out which region a pilot is in: { region } or { noState: true } or { unknown: true }.
+const note = (pilotId, text) => db.insert('records', { pilotId, type: 'note', date: db.today(), text });
+
+// Work out which region a pilot is in: { region } or { unknown: true, state? }.
+// When the home base has no state (just a town, like "Yeppoon"), the town is looked up on the map
+// to find its state. Only a home base the map can't find is left for Kimberly to check by hand.
 async function regionOf(p) {
   const text = String(p.homeBase || '');
   if (/new zealand|\bn\.?z\b/i.test(text)) return { region: 'nz' };
-  const state = guessState(text) || '';
-  if (!state) return { noState: true };
-  if (state !== 'QLD' && state !== 'WA') return { region: state };
-  // Queensland and WA: find the town on the map to see which part of the state it's in.
+  let state = guessState(text) || '';
+  if (!state && !text.trim()) return { unknown: true };
+  if (state && state !== 'QLD' && state !== 'WA') return { region: state };
+  // Find the town on the map: for Queensland and WA to see which part of the state it's in,
+  // and for a town given without a state to find which state it's in.
   const q = geo.queryFor({ homeBase: text, state });
   let hit = null;
   try { hit = await geo.lookup(q); } catch (e) { console.warn('Screening lookup failed:', e.message); }
+  if (!state) {
+    if (!hit || !hit.state) return { unknown: true };
+    state = hit.state;
+    db.update('pilots', p.id, { state });
+    note(p.id, `Automatic check: home base "${text}" has no state, so it was found on the map: ${hit.label || state}.`);
+  }
   if (!hit) return { unknown: true, state };
   db.update('pilots', p.id, { geo: { q, lat: hit.lat, lng: hit.lng, label: hit.label } });
-  return { region: state === 'QLD' ? qldRegion(hit.lat, hit.lng) : waRegion(hit.lat) };
+  if (state === 'QLD') return { region: qldRegion(hit.lat, hit.lng) };
+  if (state === 'WA') return { region: waRegion(hit.lat) };
+  return { region: state };
 }
-
-const note = (pilotId, text) => db.insert('records', { pilotId, type: 'note', date: db.today(), text });
 
 // Screen one newly registered pilot. sendEmail({ subject, body, pilots }) sends and logs the email.
 async function screen(pilotId, sendEmail) {
@@ -87,17 +98,14 @@ async function screen(pilotId, sendEmail) {
   const r = await regionOf(p);
   if (r.region) db.update('pilots', p.id, { region: regionLabel(r.region) });
   if (r.region && s.regions.includes(r.region)) return { outcome: 'accepted', region: r.region };
-  if (r.unknown) { // in QLD or WA but the town couldn't be found: leave it for Kimberly to check
-    note(p.id, `Automatic check: couldn't place "${p.homeBase}" on the map, so couldn't tell which part of ${r.state} it's in. Please check by hand.`);
+  if (r.unknown) { // the home base couldn't be placed: leave it for Kimberly to check, never decline
+    note(p.id, r.state
+      ? `Automatic check: couldn't place "${p.homeBase}" on the map, so couldn't tell which part of ${r.state} it's in. Please check by hand.`
+      : `Automatic check: couldn't work out which state "${p.homeBase || '(no home base given)'}" is in. Please check by hand.`);
     return { outcome: 'review' };
   }
-  const why = r.noState ? 'no state given in home base' : `outside target regions (${regionLabel(r.region)})`;
   db.update('pilots', p.id, { stage: 'not_proceeding' });
-  if (r.noState) { // Kimberly's rule: no state given → declined without an email
-    note(p.id, `Auto-declined: ${why}. No email sent.`);
-    return { outcome: 'declined', emailed: false };
-  }
-  note(p.id, `Auto-declined: ${why}. Polite "not recruiting in your area" email sent.`);
+  note(p.id, `Auto-declined: outside target regions (${regionLabel(r.region)}). Polite "not recruiting in your area" email sent.`);
   sendEmail({ subject: s.subject, body: s.body, pilots: [db.get('pilots', p.id)] });
   return { outcome: 'declined', emailed: true };
 }

@@ -152,8 +152,8 @@ router.post('/import/email', (req, res) => {
   const { pilot, isNew } = intake.upsertFromRegistration(reg, 'pasted email');
   if (!isNew) return res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent('Existing pilot updated from the email.'));
   screenNew(pilot.id).then(r => {
-    const msg = r.outcome === 'declined' ? 'Pilot added, then auto-declined: outside your target regions' + (r.emailed ? ' (polite email sent).' : ' (no state given, so no email).')
-      : r.outcome === 'review' ? 'Pilot added. Their town couldn\u2019t be placed on the map, so check their region by hand.' : 'Pilot added from the email.';
+    const msg = r.outcome === 'declined' ? 'Pilot added, then auto-declined: outside your target regions (polite email sent).'
+      : r.outcome === 'review' ? 'Pilot added. Their home base couldn\u2019t be placed on the map, so check their state and region by hand.' : 'Pilot added from the email.';
     res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent(msg));
   }).catch(e => { console.error('Screening error:', e); res.redirect(`/pilots/${pilot.id}?msg=` + encodeURIComponent('Pilot added from the email.')); });
 });
