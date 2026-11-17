@@ -4,6 +4,29 @@
 <meta charset="utf-8">
 <title>Aspex Flight Logbook</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// If part of the logbook fails to load in this browser (usually a browser extension, such as an ad or
+// privacy blocker, or old saved files), say so on the page instead of leaving the tabs dead.
+window.lbProblems = [];
+addEventListener('error', e => {
+  const t = e.target;
+  if (t && (t.tagName === 'SCRIPT' || t.tagName === 'LINK')) lbProblems.push('Couldn\u2019t load ' + String(t.src || t.href).split('/').pop().split('?')[0]);
+  else if (e.message) lbProblems.push(e.message + (e.filename ? ' (' + e.filename.split('/').pop().split('?')[0] + ')' : ''));
+}, true);
+addEventListener('load', () => setTimeout(() => {
+  const missing = ['showView', 'renderJobs', 'renderInventory', 'renderReports', 'renderApprovals', 'openJobPack'].filter(f => typeof window[f] !== 'function');
+  if (!missing.length && !lbProblems.length) return;
+  const d = document.createElement('div');
+  d.style.cssText = 'background:#fff4d6;border-bottom:2px solid #e0a800;color:#4a3800;padding:10px 16px;font:14px/1.45 system-ui,sans-serif';
+  d.innerHTML = '<b>Part of the logbook didn\u2019t load in this browser, so some tabs may not respond.</b> ' +
+    'This is usually caused by a browser extension (such as an ad or privacy blocker) or old saved files. ' +
+    '<a href="/logbook/help#tabs" target="_blank" style="color:#4a3800">See how to fix it</a> ' +
+    '<button onclick="location.reload()" style="margin-left:6px">Reload</button>' +
+    '<div style="font-size:12px;opacity:.75;margin-top:4px">Details for Aspex: ' +
+    [...lbProblems, ...(missing.length ? ['missing: ' + missing.join(', ')] : [])].slice(0, 4).map(x => String(x).replace(/[<>&]/g, '')).join(' \u00b7 ') + '</div>';
+  document.body.prepend(d);
+}, 1500));
+</script>
 <link rel="stylesheet" href="/static/leaflet/leaflet.css">
 <script src="/static/leaflet/leaflet.js"></script>
 <script src="geo.cjs"></script>
@@ -529,7 +552,9 @@ function showView(v) {
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   for (const n of ['logbook', 'aspex', 'jobs', 'sites', 'approvals', 'inventory', 'reports', 'me']) $('#v-' + n).hidden = v !== n;
   $('#nfLabel').style.visibility = $('#flagLabel').style.visibility = v === 'logbook' ? '' : 'hidden';
-  if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'aspex') loadAspexJobs().then(renderAspex); if (v === 'me') renderMe(); if (v === 'logbook') loadChecks(); if (v === 'jobs') renderJobs(); if (v === 'approvals') renderApprovals(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  try {   // a tab still opens even if its contents can't be drawn (e.g. a script blocked by a browser extension)
+    if (v === 'inventory') renderInventory(); if (v === 'reports') renderReports(); if (v === 'aspex') loadAspexJobs().then(renderAspex); if (v === 'me') renderMe(); if (v === 'logbook') loadChecks(); if (v === 'jobs') renderJobs(); if (v === 'approvals') renderApprovals(); if (v === 'sites') { renderSites(); setTimeout(() => siteMap?.invalidateSize(), 50); }
+  } catch (e) { console.error(e); window.lbProblems?.push(e.message); }
   if (v !== 'logbook') $('#dClose').click();
 }
 document.querySelectorAll('nav.tabs button').forEach(b => b.onclick = () => showView(b.dataset.v));
