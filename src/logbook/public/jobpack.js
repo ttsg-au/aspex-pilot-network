@@ -99,6 +99,8 @@ function openJobPack(p) {
     packMap = L.map('packMap', { zoomControl: false, attributionControl: true });
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri' }).addTo(packMap);
     const shape = L.polygon(s.boundary.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 3, fillOpacity: 0.08 }).addTo(packMap);
+    for (const b of s.blocks || []) L.polygon(b.polys.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 1, fill: false, interactive: false })
+      .bindTooltip(esc(b.name), { permanent: true, direction: 'center', className: 'blk-lbl' }).addTo(packMap);
     packMap.fitBounds(shape.getBounds(), { padding: [20, 20] });
   }
 }

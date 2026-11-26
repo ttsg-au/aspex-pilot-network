@@ -217,6 +217,8 @@ async function renderJobNetwork(key) {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 18, attribution: 'Imagery © Esri' }).addTo(netMap);
     const group = L.featureGroup().addTo(netMap), site = ops.sites[j.siteId];
     if (site?.boundary) for (const poly of site.boundary) L.polygon(poly.map(r => r.map(p => [p[1], p[0]])), { color: '#fff', weight: 2, fillOpacity: 0.05 }).addTo(group);
+    for (const b of site?.blocks || []) L.polygon(b.polys.map(poly => poly.map(r => r.map(p => [p[1], p[0]]))), { color: '#fff', weight: 1, fill: false, interactive: false })
+      .bindTooltip(esc(b.name), { permanent: true, direction: 'center', className: 'blk-lbl' }).addTo(netMap);
     const colours = ['#ffb000', '#00c2ff', '#ff5d8f', '#7cff6b', '#c38bff'];
     net.pilots.forEach((p, i) => p.flights.filter(f => f.track === 'ok').forEach(async f => {
       const r = await fetch(`api/jobs/${encodeURIComponent(key)}/network-track/${p.uid}/${encodeURIComponent(f.file)}`);

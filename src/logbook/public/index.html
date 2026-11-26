@@ -34,6 +34,8 @@ addEventListener('load', () => setTimeout(() => {
 <script src="controlled.cjs"></script>
 <link rel="icon" href="data:,">
 <style>
+  .leaflet-tooltip.blk-lbl { background: rgba(20,32,42,.75); color: #fff; border: 0; box-shadow: none; font: 600 11px system-ui, sans-serif; padding: 1px 5px; }
+  .leaflet-tooltip.blk-lbl::before { display: none; }
   :root {
     --bg: #f4f5f2; --panel: #ffffff; --ink: #1d2320; --muted: #6a736e; --line: #e2e5e0;
     --accent: #0f6e5a; --accent-soft: #e3f1ec; --warn: #b35a00; --warn-soft: #fbeedd; --bar: #2f8f77;

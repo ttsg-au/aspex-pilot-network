@@ -76,7 +76,7 @@ router.get('/logbook/api/coverage/:key', async (req, res) => {
     if (req.lb.role !== 'owner' && uid !== req.lb.id) continue;
     people.push({ uid, name: e.name, count: e.count, updatedAt: e.updatedAt, images: await readImages(e) });
   }
-  res.json({ key: job.key, me: req.lb.id, name: job.name, boundary: job.site?.boundary || null, siteName: job.site?.name || '', people });
+  res.json({ key: job.key, me: req.lb.id, name: job.name, boundary: job.site?.boundary || null, blocks: job.site?.blocks || null, siteName: job.site?.name || '', people });
 });
 
 // Clear my photos for this job (e.g. sent the wrong folder).

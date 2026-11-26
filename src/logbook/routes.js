@@ -103,6 +103,9 @@ router.post('/logbook/api/flights/:sha', (req, res) => {          // CASA fields
 router.post('/logbook/api/sites/:id/kml', raw('20mb'), (req, res) => {
   try { res.json(sites.setBoundary(req.lb.id, store.safeKey(req.params.id), req.body, req.query.name || '')); } catch (e) { fail(res, e); }
 });
+router.post('/logbook/api/sites/:id/blocks', express.json({ limit: '60mb' }), (req, res) => {
+  try { res.json(sites.setBlocks(req.lb.id, store.safeKey(req.params.id), (req.body || {}).files)); } catch (e) { fail(res, e); }
+});
 router.post('/logbook/api/sites-from-points', express.json({ limit: '2mb' }), (req, res) => {
   try { res.json(sites.sitesFromPoints(req.lb.id, (req.body || {}).sites)); } catch (e) { fail(res, e); }
 });

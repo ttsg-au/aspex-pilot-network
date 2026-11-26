@@ -26,37 +26,79 @@ function unzipFirstKml(buf) {
   }
   throw new Error('no KML inside the KMZ');
 }
+// One KML -> its polygons, plus each named placemark that holds polygons (so a single KML with a
+// placemark per block can still be split into blocks).
 function parseKml(text) {
   const coords = (s) => s.trim().split(/\s+/).map(t => t.split(',').map(Number)).filter(c => c.length >= 2 && c.every(Number.isFinite)).map(c => [c[0], c[1]]);
-  const polys = [];
-  for (const m of text.matchAll(/<(?:\w+:)?Polygon[\s\S]*?<\/(?:\w+:)?Polygon>/g)) {
-    const blk = m[0];
-    const outer = blk.match(/<(?:\w+:)?outerBoundaryIs>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//);
-    if (!outer) continue;
-    const holes = [...blk.matchAll(/<(?:\w+:)?innerBoundaryIs>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//g)].map(h => coords(h[1]));
-    const ring = coords(outer[1]);
-    if (ring.length >= 3) polys.push([ring, ...holes.filter(h => h.length >= 3)]);
-  }
-  if (!polys.length) {                                              // a closed path drawn as a line
-    for (const m of text.matchAll(/<(?:\w+:)?LineString>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//g)) {
-      const r = coords(m[1]);
-      if (r.length >= 4 && Geo.metres(r[0], r[r.length - 1]) < 50) polys.push([r]);
+  const polysIn = (blk) => {
+    const out = [];
+    for (const m of blk.matchAll(/<(?:\w+:)?Polygon[\s\S]*?<\/(?:\w+:)?Polygon>/g)) {
+      const p = m[0];
+      const outer = p.match(/<(?:\w+:)?outerBoundaryIs>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//);
+      if (!outer) continue;
+      const holes = [...p.matchAll(/<(?:\w+:)?innerBoundaryIs>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//g)].map(h => coords(h[1]));
+      const ring = coords(outer[1]);
+      if (ring.length >= 3) out.push([ring, ...holes.filter(h => h.length >= 3)]);
     }
-  }
-  if (!polys.length) throw new Error('no polygon found in the KML - draw the farm boundary as a polygon in Google Earth');
+    if (!out.length) {                                              // a closed path drawn as a line
+      for (const m of blk.matchAll(/<(?:\w+:)?LineString>[\s\S]*?<(?:\w+:)?coordinates>([\s\S]*?)<\//g)) {
+        const r = coords(m[1]);
+        if (r.length >= 4 && Geo.metres(r[0], r[r.length - 1]) < 50) out.push([r]);
+      }
+    }
+    return out;
+  };
+  const polys = polysIn(text);
+  if (!polys.length) throw new Error('no polygon found in the KML - draw the boundary as a polygon in Google Earth');
   const name = (text.match(/<name>([^<]{1,120})<\/name>/) || [])[1] || '';
-  return { polys, name: name.trim() };
+  const marks = [];
+  for (const m of text.matchAll(/<(?:\w+:)?Placemark\b[\s\S]*?<\/(?:\w+:)?Placemark>/g)) {
+    const pp = polysIn(m[0]);
+    if (pp.length) marks.push({ name: unxml((m[0].match(/<(?:\w+:)?name>([^<]{1,120})<\//) || [])[1] || ''), polys: pp });
+  }
+  return { polys, name: unxml(name), marks };
 }
-function setBoundary(uid, key, buf, filename) {
-  const text = buf[0] === 0x50 && buf[1] === 0x4b ? unzipFirstKml(buf) : buf.toString('utf8');
-  const { polys, name } = parseKml(text);
+const unxml = (s) => s.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").trim();
+const kmlText = (buf) => buf[0] === 0x50 && buf[1] === 0x4b ? unzipFirstKml(buf) : buf.toString('utf8');
+const natural = (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true, sensitivity: 'base' });
+const ha = (polys) => Math.round(Geo.areaHa(polys) * 10) / 10;
+
+function saveBlocks(uid, key, blocks, label, siteName = '') {
+  const boundary = blocks.flatMap(b => b.polys);
   return store.updateSite(uid, key, (s) => {
-    s.boundary = polys; s.areaHa = Math.round(Geo.areaHa(polys) * 10) / 10;
-    s.centroid = Geo.centroid(polys).map(v => Math.round(v * 1e6) / 1e6);
-    s.boundaryFile = store.clean(filename, 200); s.boundaryLoaded = new Date().toISOString();
-    if (!s.name && name) s.name = name;
+    s.boundary = boundary; s.areaHa = ha(boundary);
+    s.centroid = Geo.centroid(boundary).map(v => Math.round(v * 1e6) / 1e6);
+    s.blocks = blocks.length > 1 ? blocks.map(b => ({ name: store.clean(b.name, 80), areaHa: ha(b.polys), polys: b.polys })) : undefined;
+    if (!s.blocks) delete s.blocks;
+    s.boundaryFile = store.clean(label, 200); s.boundaryLoaded = new Date().toISOString();
+    if (!s.name && siteName) s.name = siteName;
     delete s.airspace;                                              // boundary changed: re-check airspace
   });
+}
+// One KML/KMZ for the whole site (a single file with one placemark per block still becomes blocks).
+function setBoundary(uid, key, buf, filename) {
+  const { polys, name, marks } = parseKml(kmlText(buf));
+  const named = marks.filter(m => m.name);
+  const blocks = named.length > 1 && named.length === marks.length && new Set(named.map(m => m.name)).size === named.length
+    ? named.sort(natural) : [{ name: name || filename, polys }];
+  return saveBlocks(uid, key, blocks, filename, name);
+}
+// Several KML/KMZ files, one per block (e.g. Block 1.kml … Block 16.kml). All or nothing.
+function setBlocks(uid, key, files) {
+  if (!Array.isArray(files) || !files.length) throw new Error('no KML files');
+  if (files.length > 200) throw new Error('too many files (200 at most)');
+  const blocks = [];
+  for (const f of files) {
+    const fname = String(f.name || 'Block');
+    let parsed;
+    try { parsed = parseKml(kmlText(Buffer.from(String(f.data || ''), 'base64'))); }
+    catch (e) { throw new Error(`${fname}: ${e.message}`); }
+    blocks.push({ name: fname.replace(/\.km[lz]$/i, ''), polys: parsed.polys });
+  }
+  const seen = new Set();
+  for (const b of blocks) { let n = b.name, k = 2; while (seen.has(n.toLowerCase())) n = `${b.name} (${k++})`; b.name = n; seen.add(n.toLowerCase()); }
+  blocks.sort(natural);
+  return saveBlocks(uid, key, blocks, `${blocks.length} block KML file${blocks.length > 1 ? 's' : ''}`);
 }
 
 // ---------- airspace (OpenAIP Australia-wide export files, keyless) ----------
@@ -220,4 +262,4 @@ async function nearestPlace(lat, lon) {
   return name;
 }
 
-module.exports = { setBoundary, checkAirspace, sitesFromPoints, nearestPlace, towerCheck, startTowerCheck, oaipExport, lim };
+module.exports = { setBoundary, setBlocks, parseKml, checkAirspace, sitesFromPoints, nearestPlace, towerCheck, startTowerCheck, oaipExport, lim };

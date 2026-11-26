@@ -83,7 +83,7 @@ async function sendDoc(res, item) {
   res.type(file.mime || DOC_TYPES[name.split('.').pop().toLowerCase()] || 'application/octet-stream')
     .set('Content-Disposition', `inline; filename="${name}"`).send(file.content);
 }
-const siteOut = (s) => s && { name: s.name, areaHa: s.areaHa, centroid: s.centroid, boundary: s.boundary, airspace: s.airspace };
+const siteOut = (s) => s && { name: s.name, areaHa: s.areaHa, centroid: s.centroid, boundary: s.boundary, blocks: s.blocks, airspace: s.airspace };
 
 // Jobs a pilot (logbook user) has been assigned to.
 function jobsFor(u) {
@@ -145,8 +145,9 @@ router.get('/logbook/aspex-jobs/:key/site.kml', (req, res) => {
   const ring = (r) => r.map(p => `${p[0]},${p[1]},0`).join(' ');
   res.type('application/vnd.google-earth.kml+xml').attachment(`${(j.site.name || 'site').replace(/[^\w -]/g, '')} boundary.kml`).send(
     `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${x(j.site.name)}</name>`
-    + j.site.boundary.map(poly => `<Placemark><name>${x(j.site.name)}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${ring(poly[0])}</coordinates></LinearRing></outerBoundaryIs>`
-      + poly.slice(1).map(h => `<innerBoundaryIs><LinearRing><coordinates>${ring(h)}</coordinates></LinearRing></innerBoundaryIs>`).join('') + '</Polygon></Placemark>').join('')
+    + (j.site.blocks?.length ? j.site.blocks : [{ name: j.site.name, polys: j.site.boundary }]).map(b => b.polys.map(poly =>
+      `<Placemark><name>${x(b.name)}</name><Polygon><outerBoundaryIs><LinearRing><coordinates>${ring(poly[0])}</coordinates></LinearRing></outerBoundaryIs>`
+      + poly.slice(1).map(h => `<innerBoundaryIs><LinearRing><coordinates>${ring(h)}</coordinates></LinearRing></innerBoundaryIs>`).join('') + '</Polygon></Placemark>').join('')).join('')
     + '</Document></kml>');
 });
 router.get('/logbook/api/aspex-jobs/:key/track/:file', async (req, res) => {

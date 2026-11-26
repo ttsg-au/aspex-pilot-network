@@ -104,7 +104,7 @@ async function covFilesFromDrop(dt) {
 
 // ---------- Drawing coverage ----------
 // A grid over the site in degrees (cells ~1-3 m). Bit 1 = inside the boundary, bit 2 = covered by a photo.
-function covGrid(rings, photos) {
+function covGrid(rings, photos, blocks) {
   const pts = rings.flat(); if (!pts.length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [x, y] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
@@ -115,7 +115,7 @@ function covGrid(rings, photos) {
   x0 -= pad * dx; y0 -= pad * dy; x1 += pad * dx; y1 += pad * dy;
   const cols = Math.ceil((x1 - x0) / dx), rows = Math.ceil((y1 - y0) / dy), g = new Uint8Array(cols * rows);
   // Fill polygons row by row (even-odd), setting `bit`.
-  const fill = (polyRings, bit) => {
+  const fill = (polyRings, bit, label) => {
     let ya = Infinity, yb = -Infinity;
     for (const r of polyRings) for (const [, y] of r) { ya = Math.min(ya, y); yb = Math.max(yb, y); }
     const r0 = Math.max(0, Math.floor((y1 - yb) / dy)), r1 = Math.min(rows - 1, Math.ceil((y1 - ya) / dy));
@@ -128,18 +128,22 @@ function covGrid(rings, photos) {
       xs.sort((p, q) => p - q);
       for (let k = 0; k + 1 < xs.length; k += 2) {
         const c0 = Math.max(0, Math.ceil((xs[k] - x0) / dx - 0.5)), c1 = Math.min(cols - 1, Math.floor((xs[k + 1] - x0) / dx - 0.5));
-        for (let c = c0, o = row * cols + c0; c <= c1; c++, o++) g[o] |= bit;
+        if (label) for (let c = c0, o = row * cols + c0; c <= c1; c++, o++) lab[o] = label;
+        else for (let c = c0, o = row * cols + c0; c <= c1; c++, o++) g[o] |= bit;
       }
     }
   };
   for (const poly of rings.__polys) fill(poly, 1);
+  // Which block each cell is in (0 = none). Each block's polygons are filled on their own.
+  const lab = blocks?.length ? new Uint16Array(cols * rows) : null;
+  if (lab) blocks.forEach((b, i) => { for (const poly of b.polys) fill(poly, 0, i + 1); });
   for (const p of photos) {
     const yr = p.yaw * Math.PI / 180, fx = Math.sin(yr), fy = Math.cos(yr), rx = Math.cos(yr), ry = -Math.sin(yr);
     const hw = p.w / 2, hh = p.h / 2;
     const corner = (a, b) => [p.lon + (a * hw * rx + b * hh * fx) / mLon, p.lat + (a * hw * ry + b * hh * fy) / mLat];
     fill([[corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)]], 2);
   }
-  return { g, cols, rows, x0, y1, dx, dy, cell, mLat, mLon };
+  return { g, lab, cols, rows, x0, y1, dx, dy, cell, mLat, mLon };
 }
 // Gaps inside the boundary, as connected areas (largest first). Tiny slivers are ignored.
 function covGaps(G, minM2) {
@@ -171,6 +175,8 @@ async function openCoverage({ key, title, canAdd = true }) {
       #cov #covMap{flex:1} #cov .cov-px{image-rendering:pixelated} #cov .drop{border:2px dashed #9fb3aa;border-radius:8px;padding:14px;text-align:center;margin:8px 0;color:#405563}
       #cov .drop.over{background:#e6f4ef;border-color:#0f6e5a} #cov .big{font-size:26px;font-weight:700} #cov h3{margin:14px 0 6px;font-size:14px}
       #cov label{display:block;margin:3px 0} #cov .gap{cursor:pointer;padding:3px 0;border-bottom:1px solid #eef1f3} #cov .gap:hover{color:#b3261e}
+      #cov table.blk{width:100%;border-collapse:collapse;font-size:13px} #cov table.blk td{padding:3px 4px;border-bottom:1px solid #eef1f3}
+      #cov table.blk tr{cursor:pointer} #cov table.blk tr:hover{background:#f1f5f7} #cov table.blk tr.short td:nth-child(2){color:#b3261e;font-weight:600}
       #cov .key span{display:inline-block;width:12px;height:12px;border-radius:2px;margin:0 4px -1px 0}
       @media(max-width:760px){#cov .body{flex-direction:column} #cov .side{width:auto;max-height:45vh}}`;
     document.head.appendChild(st);
@@ -196,6 +202,9 @@ async function covLoad() {
   if (d.boundary) {
     covState.bLayer?.remove();
     covState.bLayer = L.polygon(d.boundary.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 2, fill: false }).addTo(covMap);
+    covState.blkLayer?.remove();
+    covState.blkLayer = L.layerGroup((d.blocks || []).map(b => L.polygon(b.polys.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 1, fill: false, interactive: false })
+      .bindTooltip(esc(b.name), { permanent: true, direction: 'center', className: 'blk-lbl' }))).addTo(covMap);
     if (!covState.fitted) { covMap.fitBounds(covState.bLayer.getBounds(), { padding: [20, 20] }); covState.fitted = 1; }
   } else if (all.length && !covState.fitted) { covMap.fitBounds(all.map(i => [i.lat, i.lon])); covState.fitted = 1; }
   else if (!covState.fitted) covMap.setView([-28, 134], 4);
@@ -213,9 +222,19 @@ function covRender() {
   let stats = '';
   if (d.boundary && used.length) {
     const rings = d.boundary.flat(); rings.__polys = d.boundary;
-    const G = covGrid(rings, used), { g, cols, rows } = G;
-    let inside = 0, covIn = 0; for (let o = 0; o < g.length; o++) if (g[o] & 1) { inside++; if (g[o] & 2) covIn++; }
-    const gaps = covGaps(G, 30), cv = document.createElement('canvas'); cv.width = cols; cv.height = rows;
+    const blocks = d.blocks || [];
+    const G = covGrid(rings, used, blocks), { g, lab, cols, rows } = G;
+    const bIn = new Float64Array(blocks.length + 1), bCov = new Float64Array(blocks.length + 1);
+    let inside = 0, covIn = 0;
+    for (let o = 0; o < g.length; o++) if (g[o] & 1) { inside++; if (g[o] & 2) covIn++;
+      if (lab) { const b = lab[o]; bIn[b]++; if (g[o] & 2) bCov[b]++; } }
+    const gaps = covGaps(G, 30);
+    if (lab) for (const gp of gaps) {                                  // the block a gap is (mostly) in
+      const n = new Map(); for (const o of gp.cells) n.set(lab[o], (n.get(lab[o]) || 0) + 1);
+      let best = 0, bn = -1; for (const [k, v] of n) if (k && v > bn) { best = k; bn = v; }
+      gp.block = best ? blocks[best - 1].name : '';
+    }
+    const cv = document.createElement('canvas'); cv.width = cols; cv.height = rows;
     const cx = cv.getContext('2d'), img = cx.createImageData(cols, rows), px = img.data;
     for (let o = 0; o < g.length; o++) { const v = g[o], k = o * 4;
       if (v & 2) { px[k] = 46; px[k + 1] = 170; px[k + 2] = 90; px[k + 3] = v & 1 ? 95 : 45; } }
@@ -223,14 +242,20 @@ function covRender() {
     cx.putImageData(img, 0, 0);
     const b = [[G.y1 - rows * G.dy, G.x0], [G.y1, G.x0 + cols * G.dx]];
     covState.overlay = L.imageOverlay(cv.toDataURL(), b, { opacity: 1, className: 'cov-px' }).addTo(covMap);
-    const pct = inside ? Math.floor(1000 * covIn / inside) / 10 : 0   // rounded down: never shows 100% while there's a gap, gapM2 = gaps.reduce((s, x) => s + x.m2, 0);
+    const floorPct = (a, b) => b ? Math.floor(1000 * a / b) / 10 : 0;   // rounded down: never shows 100% while there's a gap
+    const pct = floorPct(covIn, inside), gapM2 = gaps.reduce((t, x) => t + x.m2, 0);
     const at = gp => [G.y1 - (gp.cy + 0.5) * G.dy, G.x0 + (gp.cx + 0.5) * G.dx];
     gaps.slice(0, 200).forEach((gp, i) => L.circleMarker(at(gp), { radius: 4, color: '#b3261e', weight: 1, fillOpacity: 0.9 })
-      .bindTooltip(`Gap ${i + 1}: ${num(gp.m2)} m²`).addTo(covState.gapLayer));
-    stats = `<div class="big">${num(pct, 1)}%</div><div class="muted">of the site boundary is covered by the selected photos</div>
+      .bindTooltip(`Gap ${i + 1}${gp.block ? ' · ' + esc(gp.block) : ''}: ${num(gp.m2)} m²`).addTo(covState.gapLayer));
+    const blockRows = blocks.map((b, i) => { const k = i + 1, ng = gaps.filter(x => x.block === b.name).length;
+      return { name: b.name, pct: floorPct(bCov[k], bIn[k]), ng, has: bIn[k] > 0 }; });
+    stats = `<div class="big">${num(pct, 1)}%</div><div class="muted">of the site is covered by the selected photos</div>
+      ${blockRows.length ? `<h3>Blocks</h3><table class="blk">${blockRows.map((b, i) => `<tr data-blk="${i}" class="${b.pct < 100 ? 'short' : ''}"><td>${esc(b.name)}</td>
+          <td style="text-align:right">${num(b.pct, 1)}%</td><td class="muted">${b.ng ? `${b.ng} gap${b.ng > 1 ? 's' : ''}` : 'no gaps'}</td></tr>`).join('')}</table>
+        <div class="muted" style="font-size:12px">Click a block to zoom to it.</div>` : ''}
       <h3>${gaps.length ? `${gaps.length} gap${gaps.length > 1 ? 's' : ''} · ${num(gapM2 / 10000, 2)} ha` : 'No gaps found'}</h3>
-      ${gaps.length ? `<div class="muted" style="margin-bottom:4px">Largest first. Open one to zoom to it. Some gaps may be areas with no panels (roads, substation, drains) - check against the satellite image.</div>
-        ${gaps.slice(0, 40).map((gp, i) => `<div class="gap" data-gap="${i}">Gap ${i + 1} · ${num(gp.m2)} m²</div>`).join('')}` : ''}`;
+      ${gaps.length ? `<div class="muted" style="margin-bottom:4px">Largest first. Click one to zoom to it. Some gaps may be areas with no panels (roads, substation, drains) - check against the satellite image.</div>
+        ${gaps.slice(0, 40).map((gp, i) => `<div class="gap" data-gap="${i}">Gap ${i + 1}${gp.block ? ` · <b>${esc(gp.block)}</b>` : ''} · ${num(gp.m2)} m²</div>`).join('')}` : ''}`;
     covState.gapAt = gaps.map(at);
   } else if (!d.boundary) stats = '<p class="pill warn">This job has no site boundary, so gaps can’t be worked out. Add the site boundary to the job.</p>';
   else stats = '<p class="muted">No photos yet. Add the job’s photos below.</p>';
@@ -258,6 +283,8 @@ function covRender() {
   side.querySelectorAll('[data-day]').forEach(c => c.onchange = () => { c.checked ? covState.days.add(c.dataset.day) : covState.days.delete(c.dataset.day); covRender(); });
   side.querySelectorAll('[data-person]').forEach(c => c.onchange = () => { c.checked ? covState.people.add(c.dataset.person) : covState.people.delete(c.dataset.person); covRender(); });
   side.querySelectorAll('[data-gap]').forEach(x => x.onclick = () => covMap.setView(covState.gapAt[x.dataset.gap], 19));
+  side.querySelectorAll('[data-blk]').forEach(x => x.onclick = () => {
+    const b = d.blocks[x.dataset.blk]; covMap.fitBounds(L.polygon(b.polys.map(p => p.map(r => r.map(([lo, la]) => [la, lo])))).getBounds(), { padding: [20, 20] }); });
   if (!covState.canAdd) return;
   const drop = $('#covDrop');
   $('#covPick').onclick = () => $('#covDir').click();

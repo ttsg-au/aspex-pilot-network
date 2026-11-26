@@ -454,8 +454,9 @@ function renderSiteEdit() {
         <div><b>${num(s.centroid[0], 5)}, ${num(s.centroid[1], 5)}</b>centre</div>
         <div><a class="btn ghost" href="${gmaps}" target="_blank" rel="noopener">Open in Google Maps</a></div>
         <div class="muted" style="align-self:end">from ${esc(s.boundaryFile || 'KML')}</div></div>` : ''}
-    <div class="drop" id="kmlDrop">${s.boundary ? 'Replace the boundary: drop' : 'Drop'} a Google Earth <b>KML or KMZ</b> of the farm boundary here, or click to choose one
-      <input type="file" id="kmlFile" accept=".kml,.kmz" hidden></div>
+    ${s.blocks?.length ? `<div class="muted" style="font-size:12.5px;margin:4px 0"><b>${s.blocks.length} blocks:</b> ${s.blocks.map(b => `${esc(b.name)} (${num(b.areaHa, 1)} ha)`).join(' · ')}</div>` : ''}
+    <div class="drop" id="kmlDrop">${s.boundary ? 'Replace the boundary: drop' : 'Drop'} the Google Earth <b>KML or KMZ</b> files here: one for the whole farm, or <b>one per block</b> (select them all, or drag in the folder that holds them). Or click to choose.
+      <input type="file" id="kmlFile" accept=".kml,.kmz" multiple hidden></div>
     <div id="siteMap"></div>
     <div class="sub2">
       <h4>Airspace <button class="btn sm" id="aspBtn" ${!s.boundary ? 'disabled' : ''}>${s.airspace ? 'Re-check airspace' : 'Check airspace'}</button></h4>
@@ -479,16 +480,27 @@ function renderSiteEdit() {
   };
   // boundary upload
   const drop = $('#kmlDrop'), file = $('#kmlFile');
-  const upload = async f => {
-    if (!f) return;
-    const r = await fetch(`api/sites/${curSite}/kml?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: f });
-    if (!r.ok) { toast(await r.text(), 8000); return; }
-    setOps(await r.json()); toast('Boundary loaded'); renderSites(); render();
+  // One file: the whole site (or one placemark per block inside it). Several: one block per file.
+  const upload = async list => {
+    const fs = [...list].filter(f => /\.km[lz]$/i.test(f.name));
+    if (!fs.length) { toast('No KML or KMZ files there.', 6000); return; }
+    let r;
+    if (fs.length === 1) r = await fetch(`api/sites/${curSite}/kml?name=${encodeURIComponent(fs[0].name)}`, { method: 'POST', body: fs[0] });
+    else {
+      const b64 = (f) => new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1] || ''); fr.onerror = no; fr.readAsDataURL(f); });
+      const files = await Promise.all(fs.map(async f => ({ name: f.name, data: await b64(f) })));
+      r = await fetch(`api/sites/${curSite}/blocks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files }) });
+    }
+    if (!r.ok) { toast(await r.text(), 10000); return; }
+    setOps(await r.json());
+    const n = ops.sites[curSite]?.blocks?.length;
+    toast(n ? `Boundary loaded: ${n} blocks` : 'Boundary loaded'); renderSites(); render();
   };
-  drop.onclick = () => file.click(); file.onchange = () => upload(file.files[0]);
+  drop.onclick = () => file.click(); file.onchange = () => upload(file.files);
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
-  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); upload(e.dataTransfer.files[0]); };
+  drop.ondrop = async e => { e.preventDefault(); drop.classList.remove('over');
+    upload(typeof covFilesFromDrop === 'function' ? await covFilesFromDrop(e.dataTransfer) : e.dataTransfer.files); };
   $('#aspBtn').onclick = async () => {
     $('#aspBtn').disabled = true; $('#aspBtn').textContent = 'Checking…';
     const r = await fetch(`api/sites/${curSite}/airspace`, { method: 'POST' });
@@ -510,6 +522,8 @@ function drawSiteMap(s, matched, rep) {
   if (rep) for (const a of rep.apts) layers.push(L.circleMarker([a.coords[1], a.coords[0]], { radius: 6, color: '#fff', weight: 2, fillColor: '#2c6fbb', fillOpacity: 1 }).bindTooltip(a.name));
   let bounds = null;
   if (s.boundary) { const b = L.polygon(s.boundary.map(p => p.map(toLL)), { color: '#ffd400', weight: 3, fillOpacity: .05 }); layers.push(b); bounds = b.getBounds(); }
+  for (const bl of s.blocks || []) layers.push(L.polygon(bl.polys.map(p => p.map(toLL)), { color: '#ffd400', weight: 1, fill: false, interactive: false })
+    .bindTooltip(esc(bl.name), { permanent: true, direction: 'center', className: 'blk-lbl' }));
   for (const f of matched) layers.push(L.circleMarker([f.takeoffLat, f.takeoffLon], { radius: 4, color: '#0f6e5a', weight: 1, fillColor: '#3fd1a8', fillOpacity: .9 }).bindTooltip(`${f.flightNo} · ${f.startLocal}`));
   const g = L.featureGroup(layers).addTo(siteMap);
   if (bounds) siteMap.fitBounds(bounds.pad(0.15)); else if (layers.length) siteMap.fitBounds(g.getBounds().pad(0.2)); else siteMap.setView([-33, 147], 5);

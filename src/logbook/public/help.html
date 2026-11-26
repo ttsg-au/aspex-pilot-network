@@ -208,6 +208,7 @@
 <section id="jobs"><h2>5. Jobs, Sites and Approvals</h2>
   <h3>Sites</h3>
   <p>A site is a place you fly, such as a solar farm. Give it a name, and add its boundary by dropping in a Google Earth KML of the whole site. The logbook then knows its location and area in hectares, and flights that take off there are matched to it automatically.</p>
+  <p><b>Sites with blocks:</b> if the site is split into blocks, drop in all the block KMLs at once (select them all, or drag in the folder that holds them). Each file becomes a block named after the file, such as <i>Block 7</i>, and the photo coverage check then shows the % covered and the gaps for each block. A single KML with one named shape per block works too. Dropping in new files replaces all the blocks.</p>
   <p><b>Airspace check.</b> Once a site has its boundary, click <b>Check airspace</b>. The logbook lists airspace over and near the site and aerodromes within 15 km, and gives a plain answer: no issues found, check before flying, no approval needed but take care, or approval likely needed (for example inside a control zone or restricted area, or within 3 NM of a controlled aerodrome). An aerodrome counts as controlled if it's on the published list of aerodromes with a control tower, or OpenAIP shows it inside a control zone, so a non-controlled aerodrome such as Kingaroy isn't treated as needing an approval. Each month the two sources are compared, and Aspex is emailed about any difference so the list stays up to date. Control towers keep set hours, so check the official data for the time you're flying. Jobs at that site show the same answer, with a button to mark the job as needing an approval. This is a preliminary check from community-maintained OpenAIP data, not official data. Always confirm it against official Airservices Australia data (for example in Airservices’ OpenSky app or another CASA-verified drone safety app) and check NOTAMs before flying.</p>
   <h3>Jobs</h3>
   <p>A job is a piece of work at a site, for a client: for example "Walla Walla thermography Nov 2026". Flights are linked to jobs, so you can see exactly what was flown for each one, and your CASA logs show what each flight was for.</p>
@@ -231,6 +232,7 @@
   <p><b>Nothing is copied or uploaded except a few numbers per photo.</b> The check reads only the small block at the start of each photo (position, height, camera angle and camera), where the photo already is. It needs no free space on your computer and works on a slow connection. Your photos still go to Aspex as usual with rclone.</p>
   <p><b>Good to know:</b></p>
   <ul>
+    <li>If the site has blocks, the coverage shows % covered and gaps for each block, and each gap is labelled with its block.</li>
     <li>Thermal photos are shown by default. Use <b>Camera</b> to switch to the wide camera or all photos.</li>
     <li>Tick or untick <b>Days</b> to see one day's coverage or the whole job.</li>
     <li>Photos not pointing straight down, or taken on the ground, aren't counted.</li>
