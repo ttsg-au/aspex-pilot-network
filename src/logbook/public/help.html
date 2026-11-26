@@ -45,6 +45,7 @@
   <a href="#aircraft">3. Which aircraft are supported</a>
   <a href="#logbook">4. The Logbook tab</a>
   <a href="#jobs">5. Jobs, Sites and Approvals</a>
+  <a href="#coverage" style="padding-left:20px">Photo coverage (daily gap check)</a>
   <a href="#approvals" style="padding-left:20px">Approvals</a>
   <a href="#inventory">6. Inventory</a>
   <a href="#casa">7. CASA logs</a>
@@ -215,6 +216,30 @@
   <p>Aspex job emails have <b>Accept this job</b> and <b>Decline</b> buttons. Accepting asks you to tick three statements (you fly as an independent operator; you've read the SWMS and will follow it; your flights on the job are shared with Aspex) and then press <b>Confirm</b>. That one acceptance counts everywhere: if you're assigned, the job shows as accepted in your logbook too. If you haven't accepted from the email, you can tick the same three statements and click <b>Accept this job</b> on the job in your logbook instead.</p>
   <p>When you're assigned an Aspex job, it appears under <b>Aspex jobs</b> with what you need on site: the site contact (usually the O&amp;M manager) and safety requirements such as SWMS, PPE, cones and a landing pad. Flights you fly on that job are linked to it, and those are the only flights Aspex can see.</p>
   <p><b>Job pack.</b> Click <b>Job pack</b> on a job (or <b>Job pack (print / PDF)</b> on an Aspex job) for one printable page with the site map and location, the airspace check, the approvals and their conditions, the safety requirements, the site contact and the capture settings. Click <b>Print / Save as PDF</b> to print it or save it as a PDF for pilots, clients or an airport. Approval documents stay as separate files; the pack links to each one. Pilots' packs for Aspex jobs never show the client.</p>
+  <h3 id="coverage">Photo coverage: checking for gaps each day</h3>
+  <p>On Aspex jobs, check your photo coverage at the end of <b>every day on site</b>, so any gaps are re-flown before you leave and nobody has to go back.</p>
+  <p><b>Each day on site:</b></p>
+  <ol>
+    <li><b>Import that day's flight logs.</b> On Windows, run <b>Import Flights</b>. On a Mac, click <span class="btnname">Import flights</span> and drag the flight log files into the box (see <a href="#import-mac">On a Mac</a>).</li>
+    <li><b>Back up the day's SD cards to your SSD</b>, as in the Aspex Pilot Upload Guide.</li>
+    <li>Open the job under <b>Aspex jobs</b> and click <b>Check photo coverage</b>.</li>
+    <li>Drag your SSD job folder into the box, or click <b>Choose the folder…</b> and pick it. An SD card works too. On a Mac use Chrome, Edge or Safari; all three work.</li>
+    <li>Wait for <b>Done</b>. About a minute for a big job.</li>
+    <li>Look at the map. Green is covered, <b>red is a gap</b>, and the orange line is the site boundary. The list on the left gives each gap's size, largest first; click one to zoom to it.</li>
+    <li>Re-fly the gaps before you leave site.</li>
+  </ol>
+  <p><b>Nothing is copied or uploaded except a few numbers per photo.</b> The check reads only the small block at the start of each photo (position, height, camera angle and camera), where the photo already is. It needs no free space on your computer and works on a slow connection. Your photos still go to Aspex as usual with rclone.</p>
+  <p><b>Good to know:</b></p>
+  <ul>
+    <li>Thermal photos are shown by default. Use <b>Camera</b> to switch to the wide camera or all photos.</li>
+    <li>Tick or untick <b>Days</b> to see one day's coverage or the whole job.</li>
+    <li>Photos not pointing straight down, or taken on the ground, aren't counted.</li>
+    <li>The same photo added twice is only counted once, so you can run the check on the whole SSD job folder each day.</li>
+    <li>Some red areas may be places with no panels, such as roads, drains or the substation. Check them against the satellite image.</li>
+    <li>Footprints are worked out from the drone's height above where it took off, so on hilly sites the edges of a gap are approximate.</li>
+    <li>Sent the wrong folder? Click <b>Remove my photos from this job</b> and add the right one.</li>
+  </ul>
+  <p>Aspex sees every pilot's coverage on its jobs, day by day. You see only your own.</p>
   <h3 id="approvals">Approvals</h3>
   <p>The <b>Approvals</b> tab keeps your approvals and permissions in one place: controlled airport authorisations, CASA approvals and instruments, restricted area permissions, BVLOS or EVLOS approvals, and landowner, council or national park permissions. For each one, record who issued it, the reference number, the dates it's valid, the area and maximum height, and its conditions. Attach the approval itself (a PDF, or a photo of it) so it's on hand on site.</p>
   <p>The list shows which approvals are current, which haven't started yet and which have expired. Approvals expiring within 30 days are included in your Monday reminder email.</p>

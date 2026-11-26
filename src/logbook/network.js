@@ -193,6 +193,9 @@ function calloutDetails(j, site, airspace) {
   if (keys.includes('powerlines'))
     out.push('There are overhead power lines on this site. High-voltage lines must never be crossed (over, under or through). Smaller lines: clear them by at least 5 m above the wires unless the site sets a different rule.');
   if (j.safetyNotes) out.push('Safety notes:\n' + j.safetyNotes);
+  out.push('At the end of each day on site:\n'
+    + '- Import that day\'s flight logs into your Aspex flight logbook (Windows: run Import Flights. Mac: drag the flight log files onto the logbook).\n'
+    + '- Back up the day\'s SD cards to your SSD, then open this job in the logbook (Aspex jobs) and use Check photo coverage on the SSD job folder. Re-fly any gaps it shows before you leave site.');
   if (j.capture) out.push('Capture settings:\n' + j.capture);
   if (airspace?.lines?.length) out.push('Airspace (preliminary check from OpenAIP data - confirm with official data and NOTAMs before flying):\n' + airspace.lines.map(x => '- ' + x).join('\n'));
   else if (airspace?.level === 'ok') out.push('Airspace: preliminary check found no issues (OpenAIP data - confirm with official data and NOTAMs before flying).');

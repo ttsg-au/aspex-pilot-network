@@ -14,7 +14,7 @@ addEventListener('error', e => {
   else if (e.message) lbProblems.push(e.message + (e.filename ? ' (' + e.filename.split('/').pop().split('?')[0] + ')' : ''));
 }, true);
 addEventListener('load', () => setTimeout(() => {
-  const missing = ['showView', 'renderJobs', 'renderInventory', 'renderReports', 'renderApprovals', 'openJobPack'].filter(f => typeof window[f] !== 'function');
+  const missing = ['showView', 'renderJobs', 'renderInventory', 'renderReports', 'renderApprovals', 'openJobPack', 'openCoverage'].filter(f => typeof window[f] !== 'function');
   if (!missing.length && !lbProblems.length) return;
   const d = document.createElement('div');
   d.style.cssText = 'background:#fff4d6;border-bottom:2px solid #e0a800;color:#4a3800;padding:10px 16px;font:14px/1.45 system-ui,sans-serif';
@@ -570,6 +570,7 @@ $('#showNf').onchange = render; $('#onlyFlag').onchange = renderFlights;
 <script src="aspex.js"></script>
 <script src="approvals.js"></script>
 <script src="jobpack.js"></script>
+<script src="coverage.js"></script>
 <script>
 // Text boxes grow to fit what's in them (and as you type), so long notes and capture settings are fully visible.
 (() => {

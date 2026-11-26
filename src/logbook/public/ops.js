@@ -112,7 +112,7 @@ function renderJobEdit() {
   const st = jobStats(curJob);
   const link = (f, ph) => `<div class="linkrow"><input data-f="${f}" value="${esc(j[f])}" placeholder="${ph}">${j[f] ? `<a class="btn sm ghost" style="margin:0" href="${esc(j[f])}" target="_blank" rel="noopener">Open</a>` : ''}</div>`;
   $('#jobEdit').innerHTML = `
-    <h2>${esc(j.name || 'Untitled job')} <span><button class="btn sm" id="jobPack">Job pack</button> <button class="btn sm danger" id="delJob">Delete job</button></span></h2>
+    <h2>${esc(j.name || 'Untitled job')} <span><button class="btn sm" id="jobPack">Job pack</button> <button class="btn sm" id="jobCov">Photo coverage</button> <button class="btn sm danger" id="delJob">Delete job</button></span></h2>
     <div class="form">
       <label class="full">Job name<input data-f="name" value="${esc(j.name)}" placeholder="e.g. Walla Walla thermography Nov 2026"></label>
       <label>Client (who engages you)${myRole === 'owner' ? ' <span class="pill">never shown to pilots</span>' : ''}<select data-f="clientId">${sel(clients, j.clientId, '— none —')}</select></label>
@@ -155,6 +155,7 @@ function renderJobEdit() {
   bindSafety($('#jobEdit'), curJob);
   bindJobApprovals($('#jobEdit'), j, curJob);
   $('#jobPack').onclick = () => openJobPack(packFromJob(curJob));
+  $('#jobCov').onclick = () => openCoverage({ key: curJob, title: ops.jobs[curJob]?.name || 'Job' });
   renderJobNetwork(curJob);
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {
