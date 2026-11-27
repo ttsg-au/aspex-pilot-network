@@ -137,6 +137,7 @@ function renderJobEdit() {
     <div class="sub2">${jobApprovalsSection(j, curJob)}</div>
     <div class="sub2">${safetyEditor(j, curJob)}</div>
     <div class="sub2" id="jobNet"></div>
+    <div class="sub2" id="jobUploads"></div>
     <div class="sub2">
       <h4>Flights in this job — ${st.fl.length} flights, ${hrs(st.mins)} h</h4>
       <table>${sessions(st.fl).map(s => `<tr><td>${dateOnly(s.day)}</td><td>${sessLabel(s)}</td><td class="n">${s.flights.length} flights</td><td class="n">${hrs(s.mins)} h</td>
@@ -157,6 +158,7 @@ function renderJobEdit() {
   $('#jobPack').onclick = () => openJobPack(packFromJob(curJob));
   $('#jobCov').onclick = () => openCoverage({ key: curJob, title: ops.jobs[curJob]?.name || 'Job' });
   renderJobNetwork(curJob);
+  loadUploads(curJob, $('#jobUploads'));
   $('#jobEdit').querySelectorAll('[data-f=siteId],[data-f=clientId],[data-f=name]').forEach(el => el.addEventListener('change', () => setTimeout(renderJobEdit, 150)));
   $('#delJob').onclick = async () => {
     if (!confirm(`Delete the job "${j.name || 'Untitled'}"? Its flights stay in the logbook, just unassigned.`)) return;

@@ -319,3 +319,43 @@ async function covAdd(files) {
   await covLoad();
   $('#covProg').textContent = `Done: ${num(out.length)} photos added in ${secs} s.` + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : '');
 }
+
+// ---------- Aspex Uploader ----------
+// The app's "Check photo coverage" button opens …/logbook/#coverage=<job key>&t=<job name>.
+function covFromHash() {
+  const m = /^#coverage=([^&]+)(?:&t=(.*))?$/.exec(location.hash || '');
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  setTimeout(() => openCoverage({ key: decodeURIComponent(m[1]), title: decodeURIComponent(m[2] || '') }), 800);
+}
+window.addEventListener('load', covFromHash);
+
+// Backup and upload progress reported by the app, shown on the job (owner: everyone; pilot: their own).
+const upGiB = b => b == null ? '' : b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GiB' : Math.round(b / 1048576) + ' MiB';
+const upSpan = s => s == null ? '' : s < 3600 ? Math.round(s / 60) + 'm' : Math.floor(s / 3600) + 'h ' + String(Math.round(s % 3600 / 60)).padStart(2, '0') + 'm';
+function upAgo(iso) {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : dateOnly(iso);
+}
+function upCell(t, what) {
+  if (!t) return '<span class="muted">—</span>';
+  const stale = (t.status === 'running' || t.status === 'waiting') && Date.now() - Date.parse(t.at) > 10 * 60000;
+  let s;
+  if (t.status === 'done') s = `<span class="pill ok">Complete</span> ${t.checkOk ? '0 differences' : ''}${t.files != null ? ` · ${num(t.files, 0)} files, ${upGiB(t.bytes)}` : ''}`;
+  else if (t.status === 'stopped') s = '<span class="pill">Stopped</span>';
+  else if (t.status === 'waiting') s = '<span class="pill warn">Waiting to reconnect</span>';
+  else if (t.phase === 'check') s = `<span class="pill">Checking</span>`;
+  else s = `<span class="pill">${what} ${t.pct != null ? t.pct + '%' : ''}</span> ${t.doneBytes != null ? upGiB(t.doneBytes) + ' of ' + upGiB(t.totalBytes) : ''}${t.etaSec != null ? ' · about ' + upSpan(t.etaSec) + ' left' : ''}`;
+  const extra = [t.elapsedSec ? 'running ' + upSpan(t.elapsedSec) : '', t.reconnects ? `reconnected ${t.reconnects}×` : '', 'updated ' + upAgo(t.at)].filter(Boolean).join(' · ');
+  return `${s}<div class="muted" style="font-size:12px">${extra}${stale ? ' · <b style="color:#b3261e">no contact for a while (laptop off or offline?)</b>' : ''}</div>`;
+}
+async function loadUploads(key, el) {
+  if (!el) return;
+  const r = await fetch('api/uploads/' + encodeURIComponent(key));
+  if (!r.ok) { el.innerHTML = ''; return; }
+  const d = await r.json();
+  el.innerHTML = `<h4>Card backups and uploads <span class="muted" style="font-weight:400">from Aspex Uploader</span></h4>
+    ${d.rows.length ? `<table><tr><th>Pilot</th><th>Card backup</th><th>Upload to Aspex</th></tr>${d.rows.map(x => `<tr><td>${esc(x.name || '')}</td><td>${upCell(x.backup, 'Backing up')}</td><td>${upCell(x.upload, 'Uploading')}</td></tr>`).join('')}</table>`
+      : '<p class="muted">Nothing yet. Progress appears here once Aspex Uploader is used for this job.</p>'}
+    ${d.setUp ? '' : '<p class="pill warn" style="display:block">Aspex Uploader can’t be installed yet: the upload connection setting (UPLOADER_RCLONE_CONF_B64) isn’t on the server.</p>'}`;
+}

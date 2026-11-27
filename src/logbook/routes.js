@@ -28,6 +28,7 @@ const fail = (res, e, code = 400) => res.status(code).type('text').send(String(e
 const { sendDoc } = require('./network');
 router.use(require('./network').router);                          // Aspex jobs shared with network pilots
 router.use(require('./coverage').router);                         // photo coverage check per job
+router.use(require('./uploader').router);                         // Aspex Uploader download + upload progress per job
 
 // ---------- pages ----------
 // The page uses relative links, so it must be served at /logbook/ (with the slash).
@@ -325,6 +326,7 @@ pcRouter.use('/logbook/api/pc', (req, res, next) => {
   req.lb = u;
   next();
 });
+pcRouter.use(require('./uploader').pc);                           // Aspex Uploader: version, app, job list, progress reports
 pcRouter.post('/logbook/api/pc/need', express.json({ limit: '5mb' }), (req, res) => {
   const byFile = new Map(store.flights(req.lb.id).map(f => [f.file, f]));
   const gone = new Set(store.state('deletedFiles', req.lb.id, []));     // deleted on purpose: don't send them again
