@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node app.js",
     "dev": "node app.js",
+    "build": "echo build",
     "set-password": "node scripts/set-password.js",
     "import-seed": "node scripts/import-seed.js"
   },
