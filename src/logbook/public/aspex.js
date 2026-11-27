@@ -93,6 +93,7 @@ function renderAspex() {
             <button class="btn sm" data-pack>Job pack (print / PDF)</button> <button class="btn sm" data-cov>Check photo coverage</button></div></div>
           <div><b>Aspex capture settings</b><div class="muted" style="white-space:pre-wrap;margin-top:6px">${esc(j.capture || 'None given - see the job folder.')}</div></div>
         </div>
+        <div style="padding:0 14px 12px" data-up></div>
         <div style="padding:0 14px 12px"><b>Your own pre-flight checks</b> <span class="muted">- your aircraft and operational checklists are your own; tick each day you completed them</span>
           <div class="days">${daysOf(j).map(d => `<label><input type="checkbox" data-day="${d}"${p.days?.[d] ? ' checked' : ''}> ${dateOnly(d)}</label>`).join('')}</div></div>
         <div style="padding:0 14px 12px"><b>Your flights on this job - ${flights.length} flights, ${hrs(mins)} h</b>
@@ -109,6 +110,7 @@ function renderAspex() {
     bindAspexApprovals(card, j);
     card.querySelector('[data-pack]')?.addEventListener('click', () => openJobPack(packFromAspex(j)));
     card.querySelector('[data-cov]')?.addEventListener('click', () => openCoverage({ key: j.key, title: j.name }));
+    loadUploads(j.key, card.querySelector('[data-up]'));
     card.querySelector('[data-accept]')?.addEventListener('click', async () => {
       const ticks = [...card.querySelectorAll('[data-ack]')].map(c => c.checked);
       const r = await post(url + '/ack', { ticks });

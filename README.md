@@ -170,6 +170,22 @@ The flight logbook (replacing Drone Logbook) is a self-contained section of this
 - **Make a new upload key:** stops old copies of Import Flights from working.
 - **Move the old PC logbook here:** upload `Logbook export for website.json.gz`. This is a one-off and safe to repeat; flights already here are skipped.
 
+## 6. Aspex Uploader (pilot backup and upload app)
+
+Pilots download **Aspex Uploader Setup** from the logbook's Import window and double-click it once. It installs the app
+with their upload key built in, downloads rclone, and adds desktop and start-up shortcuts. The app backs up SD cards to
+the pilot's SSD, uploads to `Uploads/<job>/<pilot>` in the Aspex Dropbox app folder, resumes by itself after dropouts and
+restarts, and reports progress to the job page ("Card backups and uploads").
+
+- **Updates:** the app checks the logbook each time it opens and replaces itself when `src/logbook/uploader/AspexUploader.ps1`
+  has changed. Publishing the website updates every pilot.
+- **Connection file (one-off):** the server hands out the pilots' rclone.conf (Dropbox app folder only, never SiteMark
+  keys) from the secret setting `UPLOADER_RCLONE_CONF_B64`. To make the value, run this in PowerShell on Kimberly's laptop and
+  paste the clipboard into the setting:
+  `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\Documents\rclone - PILOTS.conf")) | Set-Clipboard`
+  Until it's set, the job page shows a warning and the installer stops with a message.
+- **Coverage:** the app's "Check photo coverage" button opens the job's coverage map in the logbook.
+
 ## Coming next (stage 2)
 
 - **Pilot logins:** each pilot updates their own details and uploads their own certificates. Anything they change shows as "not verified" until you check it.
