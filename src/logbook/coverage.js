@@ -27,9 +27,36 @@ function jobFor(u, key) {
 const index = (key) => store.state('coverage', 'job:' + key, {});
 const setIndex = (key, v) => store.setState('coverage', 'job:' + key, v);
 
-async function readImages(entry) {
-  if (!entry?.fileId) return [];
-  try { const f = await db.readFile(entry.fileId); return f ? JSON.parse(f.content.toString()) : []; } catch { return []; }
+// Each person's photo positions for a job: kept in memory while the app runs, and saved to the
+// database in chunks (a few thousand photos each) so no single save is too big. If a save or a read
+// fails, the request fails loudly instead of quietly starting again from nothing.
+const CHUNK = 4000;
+const cache = new Map();                         // 'job|uid' -> [records]
+const idsOf = (entry) => entry?.fileIds || (entry?.fileId ? [entry.fileId] : []);
+
+async function readImages(key, uid, entry) {
+  const ck = key + '|' + uid;
+  if (cache.has(ck)) return cache.get(ck);
+  const all = [];
+  for (const id of idsOf(entry)) {
+    const f = await db.readFile(id);
+    if (!f) throw new Error('missing saved photo file ' + id);
+    all.push(...JSON.parse(f.content.toString()));
+  }
+  cache.set(ck, all);
+  return all;
+}
+async function saveImages(key, uid, all) {
+  const ids = [];
+  for (let k = 0; k < all.length; k += CHUNK) {
+    const id = await db.saveFile(Buffer.from(JSON.stringify(all.slice(k, k + CHUNK))), `coverage-${key}-${uid}-${ids.length + 1}.json`, 'application/json');
+    if (!(await db.readFile(id))) {                // the database didn't keep it
+      for (const x of ids) db.deleteFile(x);
+      throw new Error('the database did not save the photo positions');
+    }
+    ids.push(id);
+  }
+  return ids;
 }
 
 // One photo as sent by the browser -> a compact, checked record.
@@ -54,13 +81,25 @@ router.post('/logbook/api/coverage/:key', express.json({ limit: '4mb' }), async 
   const job = jobFor(req.lb, req.params.key);
   if (!job) return res.status(404).type('text').send('That job isn’t one of yours.');
   const add = (Array.isArray(req.body?.images) ? req.body.images : []).slice(0, 5000).map(clean).filter(Boolean);
-  const idx = index(job.key), mine = idx[req.lb.id] || {};
-  const byKey = new Map((await readImages(mine)).map(p => [p.f + '|' + p.d, p]));
+  const uid = req.lb.id, idx = index(job.key), mine = idx[uid] || {};
+  let prev;
+  try { prev = await readImages(job.key, uid, mine); }
+  catch (e) {
+    console.error('Coverage: could not read saved photos for', job.key, uid, e.message);
+    return res.status(503).type('text').send('The photos already saved for this job couldn’t be read just now, so nothing was changed. Please try again in a minute');
+  }
+  const byKey = new Map(prev.map(p => [p.f + '|' + p.d, p]));
   for (const p of add) byKey.set(p.f + '|' + p.d, p);
   const all = [...byKey.values()].slice(-MAX_IMAGES);
-  const fileId = await db.saveFile(Buffer.from(JSON.stringify(all)), `coverage-${job.key}-${req.lb.id}.json`, 'application/json');
-  if (mine.fileId) db.deleteFile(mine.fileId);
-  idx[req.lb.id] = { fileId, name: req.lb.name || req.lb.email, count: all.length, updatedAt: new Date().toISOString(),
+  let fileIds;
+  try { fileIds = await saveImages(job.key, uid, all); }
+  catch (e) {
+    console.error('Coverage: could not save photos for', job.key, uid, e.message);
+    return res.status(503).type('text').send('The photo positions couldn’t be saved just now. Please try again in a minute');
+  }
+  cache.set(job.key + '|' + uid, all);
+  for (const id of idsOf(mine)) db.deleteFile(id);
+  idx[uid] = { fileIds, name: req.lb.name || req.lb.email, count: all.length, updatedAt: new Date().toISOString(),
     days: [...new Set(all.map(p => p.d.slice(0, 10)).filter(Boolean))].sort() };
   setIndex(job.key, idx);
   res.json({ added: add.length, total: all.length });
@@ -74,7 +113,9 @@ router.get('/logbook/api/coverage/:key', async (req, res) => {
   const idx = index(job.key), people = [];
   for (const [uid, e] of Object.entries(idx)) {
     if (req.lb.role !== 'owner' && uid !== req.lb.id) continue;
-    people.push({ uid, name: e.name, count: e.count, updatedAt: e.updatedAt, images: await readImages(e) });
+    let images = [];
+    try { images = await readImages(job.key, uid, e); } catch (err) { console.error('Coverage: could not read photos for', job.key, uid, err.message); }
+    people.push({ uid, name: e.name, count: images.length || e.count, updatedAt: e.updatedAt, images });
   }
   res.json({ key: job.key, me: req.lb.id, name: job.name, boundary: job.site?.boundary || null, blocks: job.site?.blocks || null, siteName: job.site?.name || '', people });
 });
@@ -84,7 +125,8 @@ router.post('/logbook/api/coverage/:key/clear', async (req, res) => {
   const job = jobFor(req.lb, req.params.key);
   if (!job) return res.status(404).end();
   const idx = index(job.key);
-  if (idx[req.lb.id]?.fileId) db.deleteFile(idx[req.lb.id].fileId);
+  for (const id of idsOf(idx[req.lb.id])) db.deleteFile(id);
+  cache.delete(job.key + '|' + req.lb.id);
   delete idx[req.lb.id]; setIndex(job.key, idx);
   res.json({ ok: true });
 });
