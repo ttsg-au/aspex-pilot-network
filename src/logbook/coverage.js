@@ -73,6 +73,7 @@ function clean(p) {
     w: n(p.w, 0.5, 2000), h: n(p.h, 0.5, 2000),          // footprint on the ground, metres
     yaw: n(p.yaw, -360, 360) ?? 0, alt: n(p.alt, -500, 2000),
     off: p.off ? 1 : 0,                                  // not pointing straight down: not counted
+    v: n(p.v, 0, 99) || 1,                               // how the browser worked it out (older photos are re-read)
   };
   return r.f && r.lat != null && r.lon != null ? r : null;
 }

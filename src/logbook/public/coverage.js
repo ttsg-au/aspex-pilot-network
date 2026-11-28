@@ -8,7 +8,17 @@
 
 // ---------- Reading a photo's position block ----------
 const COV_DIAG35 = 43.267;                       // 35 mm film diagonal
-const COV_DFOV = { T: 50, W: 84, Z: 15, V: 84, M: 70 };   // fallback diagonal field of view (deg) when the photo doesn't say
+const COV_DFOV = { T: 50, W: 84, Z: 15, V: 84, M: 70 };   // fallback diagonal field of view (deg) for a camera we don't know
+// DJI's published diagonal field of view for each camera, by the drone model in the photo. Used ahead of the
+// photo's own 35 mm focal length, which DJI doesn't always record (or records only roughly) for thermal photos.
+const COV_LENS = {
+  M3T: { T: 61, W: 84, V: 84, Z: 15 },       // Mavic 3T
+  M30T: { T: 61, W: 84, V: 84, Z: 15 },      // Matrice 30T
+  M4T: { T: 45, W: 82, V: 82, Z: 15 },       // Matrice 4T
+  M3E: { W: 84, V: 84 }, M3M: { W: 84, V: 84 },
+  ZH20T: { T: 40.6, W: 82.9, V: 82.9, Z: 4 }, ZH20N: { T: 40.6, W: 82.9, V: 82.9 },
+};
+const COV_V = 2;                                   // photos read before this version are read again
 async function covReadHead(file, bytes) { return new Uint8Array(await file.slice(0, bytes).arrayBuffer()); }
 
 // JPEG segments -> { exif: DataView over TIFF, xmp: string }. Asks for more bytes if a segment runs past the end.
@@ -79,13 +89,15 @@ async function covParsePhoto(file) {
   const suffix = (file.name.match(/_([TWZVS])\.jpe?g$/i) || [])[1]?.toUpperCase();
   const W = ex.w || (suffix === 'T' ? 640 : 4000), H = ex.h || (suffix === 'T' ? 512 : 3000);
   const t = suffix === 'S' ? 'V' : suffix || ((W === 640 || W === 1280) ? 'T' : 'V');
-  const f35 = ex.f35 > 3 ? ex.f35 : COV_DIAG35 / (2 * Math.tan(COV_DFOV[t] * Math.PI / 360));
+  const lens = COV_LENS[String(ex.model || '').trim().toUpperCase()]?.[t];
+  const f35 = lens ? COV_DIAG35 / (2 * Math.tan(lens * Math.PI / 360))
+    : ex.f35 > 3 ? ex.f35 : COV_DIAG35 / (2 * Math.tan(COV_DFOV[t] * Math.PI / 360));
   const halfDiag = COV_DIAG35 / (2 * f35), a = W / H, s = Math.sqrt(a * a + 1);
   const ok = alt != null && alt > 2;
   const fw = ok ? 2 * alt * halfDiag * a / s : 0, fh = ok ? 2 * alt * halfDiag / s : 0;
   const d = (ex.taken || '').replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').slice(0, 19)
     || new Date(file.lastModified).toLocaleString('sv-SE').slice(0, 19);
-  return { f: file.name, d, t, lat, lon, w: Math.max(0.5, fw), h: Math.max(0.5, fh), yaw, alt,
+  return { v: COV_V, f: file.name, d, t, lat, lon, w: Math.max(0.5, fw), h: Math.max(0.5, fh), yaw, alt,
     off: !ok || pitch == null || pitch > -75 ? 1 : 0 };
 }
 
@@ -324,7 +336,7 @@ async function covAdd(files) {
   // Photos already sent are skipped without being opened, so checking the whole card or job folder again
   // each day only reads the new ones. DJI names carry the date and time taken, so a name is unique.
   const mine = covState.data.people.find(p => p.uid === covState.data.me);
-  const have = new Set((mine?.images || []).map(i => i.f).filter(f => /^DJI_\d{14}_/i.test(f)));
+  const have = new Set((mine?.images || []).filter(i => i.v >= COV_V).map(i => i.f).filter(f => /^DJI_\d{14}_/i.test(f)));
   const jpgs = all.filter(f => !have.has(f.name)), already = all.length - jpgs.length;
   if (!jpgs.length) { covZoomTo(folder); prog.textContent = `All ${num(all.length)} photos in that folder are already in the coverage map.`; return; }
   const out = [], skip = { nogps: 0, bad: 0 }; let done = 0, i = 0, held = null; const t0 = Date.now();
