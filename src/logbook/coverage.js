@@ -6,11 +6,12 @@
 //
 // Stored as one file per job and person (app_files), with a small index in state 'coverage' keyed by job.
 const express = require('express');
+const zlib = require('zlib');
 const db = require('../db');
 const store = require('./store');
 
 const owner = () => db.all('lbUsers').find(u => u.role === 'owner');
-const MAX_IMAGES = 60000;     // per person per job
+const MAX_IMAGES = 600000;    // per person per job (a big solar farm is well over 100,000 photos)
 
 // The job's key, name and site, if this logbook user may see / add coverage for it.
 // The owner: any of her own jobs. A pilot: an Aspex job assigned to them.
@@ -46,17 +47,19 @@ async function readImages(key, uid, entry) {
   cache.set(ck, all);
   return all;
 }
-async function saveImages(key, uid, all) {
-  const ids = [];
-  for (let k = 0; k < all.length; k += CHUNK) {
+// Saves the chunks from `from` (a photo index) onwards; the chunks before it haven't changed and keep
+// their saved files. Returns the full list of file ids, and the old ids that are no longer used.
+async function saveImages(key, uid, all, from = 0, oldIds = []) {
+  const first = Math.floor(from / CHUNK), ids = oldIds.slice(0, first), fresh = [];
+  for (let k = first * CHUNK; k < all.length; k += CHUNK) {
     const id = await db.saveFile(Buffer.from(JSON.stringify(all.slice(k, k + CHUNK))), `coverage-${key}-${uid}-${ids.length + 1}.json`, 'application/json');
     if (!(await db.readFile(id))) {                // the database didn't keep it
-      for (const x of ids) db.deleteFile(x);
+      for (const x of fresh) db.deleteFile(x);
       throw new Error('the database did not save the photo positions');
     }
-    ids.push(id);
+    ids.push(id); fresh.push(id);
   }
-  return ids;
+  return { ids, unused: oldIds.filter(x => !ids.includes(x)) };
 }
 
 // One photo as sent by the browser -> a compact, checked record.
@@ -88,21 +91,30 @@ router.post('/logbook/api/coverage/:key', express.json({ limit: '4mb' }), async 
     console.error('Coverage: could not read saved photos for', job.key, uid, e.message);
     return res.status(503).type('text').send('The photos already saved for this job couldn’t be read just now, so nothing was changed. Please try again in a minute');
   }
-  const byKey = new Map(prev.map(p => [p.f + '|' + p.d, p]));
-  for (const p of add) byKey.set(p.f + '|' + p.d, p);
-  const all = [...byKey.values()].slice(-MAX_IMAGES);
-  let fileIds;
-  try { fileIds = await saveImages(job.key, uid, all); }
+  // Photos already saved are updated in place; new ones go on the end. Only the chunks that changed are saved again.
+  const all = prev.slice(), at = new Map(all.map((p, k) => [p.f + '|' + p.d, k]));
+  let from = all.length;
+  for (const p of add) {
+    const k = at.get(p.f + '|' + p.d);
+    if (k != null) { all[k] = p; from = Math.min(from, k); }
+    else { at.set(p.f + '|' + p.d, all.length); all.push(p); }
+  }
+  let keep = all;
+  if (all.length > MAX_IMAGES) { keep = all.slice(-MAX_IMAGES); from = 0; }
+  const canReuse = Array.isArray(mine.fileIds);        // older saves weren't in even chunks: save everything again
+  let saved;
+  try { saved = await saveImages(job.key, uid, keep, canReuse ? from : 0, canReuse ? mine.fileIds : []); }
   catch (e) {
     console.error('Coverage: could not save photos for', job.key, uid, e.message);
     return res.status(503).type('text').send('The photo positions couldn’t be saved just now. Please try again in a minute');
   }
-  cache.set(job.key + '|' + uid, all);
-  for (const id of idsOf(mine)) db.deleteFile(id);
-  idx[uid] = { fileIds, name: req.lb.name || req.lb.email, count: all.length, updatedAt: new Date().toISOString(),
-    days: [...new Set(all.map(p => p.d.slice(0, 10)).filter(Boolean))].sort() };
+  cache.set(job.key + '|' + uid, keep);
+  for (const id of canReuse ? saved.unused : idsOf(mine)) db.deleteFile(id);
+  idx[uid] = { fileIds: saved.ids, name: req.lb.name || req.lb.email, count: keep.length, updatedAt: new Date().toISOString(),
+    days: [...new Set(keep.map(p => p.d.slice(0, 10)).filter(Boolean))].sort() };
   setIndex(job.key, idx);
-  res.json({ added: add.length, total: all.length });
+  if (all.length > MAX_IMAGES) console.error('Coverage: over', MAX_IMAGES, 'photos for', job.key, uid);
+  res.json({ added: add.length, total: keep.length, dropped: all.length - keep.length });
 });
 
 // Everything needed to draw the coverage map: the site boundary and the photos.
@@ -117,7 +129,10 @@ router.get('/logbook/api/coverage/:key', async (req, res) => {
     try { images = await readImages(job.key, uid, e); } catch (err) { console.error('Coverage: could not read photos for', job.key, uid, err.message); }
     people.push({ uid, name: e.name, count: images.length || e.count, updatedAt: e.updatedAt, images });
   }
-  res.json({ key: job.key, me: req.lb.id, name: job.name, boundary: job.site?.boundary || null, blocks: job.site?.blocks || null, siteName: job.site?.name || '', people });
+  const body = JSON.stringify({ key: job.key, me: req.lb.id, name: job.name, boundary: job.site?.boundary || null, blocks: job.site?.blocks || null, siteName: job.site?.name || '', people });
+  res.type('json');                                    // a whole solar farm is tens of MB: send it compressed
+  if (/\bgzip\b/.test(req.get('accept-encoding') || '')) { res.set('Content-Encoding', 'gzip'); res.set('Vary', 'Accept-Encoding'); return res.send(zlib.gzipSync(body)); }
+  res.send(body);
 });
 
 // Clear my photos for this job (e.g. sent the wrong folder).

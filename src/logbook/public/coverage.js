@@ -268,7 +268,12 @@ function covRender() {
   const T = { T: 'Thermal', W: 'Wide', Z: 'Zoom', V: 'Visual', M: 'Multispectral' };
   side.innerHTML = `${stats}
     <div class="key muted" style="margin-top:8px"><span style="background:#2eaa5a"></span>Covered <span style="background:#e11d1d;margin-left:10px"></span>Gap <span style="background:#ffb000;margin-left:10px"></span>Boundary</div>
-    ${notDown ? `<p class="muted">${num(notDown)} photo${notDown > 1 ? 's' : ''} not counted: not pointing straight down, or taken on the ground.</p>` : ''}
+    <p class="muted">${(() => { const allSel = d.people.filter(p => covState.people.has(p.uid)).flatMap(p => p.images).filter(i => covState.days.has(i.d.slice(0, 10)));
+      const camOff = allSel.length - pick.length;
+      return `On the map: <b>${num(used.length)}</b> of ${num(allSel.length)} photos for the ticked days and pilots.`
+        + (camOff ? ` ${num(camOff)} hidden by the camera choice below.` : '')
+        + (notDown ? ` ${num(notDown)} not counted: not pointing straight down, or taken on the ground.` : ''); })()}</p>
+    ${d.boundary && !(d.blocks || []).length ? '<p class="pill warn">This site has no block outlines yet, so coverage can’t be shown block by block. Drop the block KML files on the site page.</p>' : ''}
     <h3>Camera</h3><select id="covType">${types.length > 1 ? '<option value="all">All photos</option>' : ''}${types.map(t => `<option value="${t}">${T[t] || t}</option>`).join('')}${!types.length ? '<option value="all">All photos</option>' : ''}</select>
     ${days.length ? `<h3>Days</h3>${days.map(x => `<label><input type="checkbox" data-day="${x}"${covState.days.has(x) ? ' checked' : ''}> ${dateOnly(x)}</label>`).join('')}` : ''}
     ${d.people.length ? `<h3>Pilots</h3>${d.people.map(p => `<label><input type="checkbox" data-person="${p.uid}"${covState.people.has(p.uid) ? ' checked' : ''}> ${esc(p.name)} <span class="muted">(${num(p.count)} photos)</span></label>`).join('')}` : ''}
@@ -301,7 +306,7 @@ const confirmBox = (msg) => window.confirm(msg);
 async function covAdd(files) {
   const jpgs = files.filter(f => /\.jpe?g$/i.test(f.name)), prog = $('#covProg');
   if (!jpgs.length) { prog.textContent = 'No photos (.JPG) found in that folder.'; return; }
-  const out = [], skip = { nogps: 0, bad: 0 }; let done = 0, i = 0; const t0 = Date.now();
+  const out = [], skip = { nogps: 0, bad: 0 }; let done = 0, i = 0, held = null; const t0 = Date.now();
   const show = () => { prog.textContent = `Reading photos: ${num(done)} of ${num(jpgs.length)}…`; };
   show(); const tick = setInterval(show, 300);
   await Promise.all(Array.from({ length: 8 }, async () => {
@@ -314,10 +319,14 @@ async function covAdd(files) {
     prog.textContent = `Sending: ${num(Math.min(k + 2000, out.length))} of ${num(out.length)}…`;
     const r = await fetch('api/coverage/' + encodeURIComponent(covState.key), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ images: out.slice(k, k + 2000) }) });
     if (!r.ok) { prog.textContent = 'Couldn’t send: ' + (await r.text()) + '. Try again - photos already sent aren’t doubled up.'; return; }
+    held = (await r.json().catch(() => ({}))).total ?? held;
   }
   const secs = Math.round((Date.now() - t0) / 1000);
   await covLoad();
-  $('#covProg').textContent = `Done: ${num(out.length)} photos added in ${secs} s.` + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : '');
+  const mine = covState.data.people.find(p => p.uid === covState.data.me);
+  $('#covProg').innerHTML = esc(`Done: ${num(out.length)} photos read and sent in ${secs} s.` + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : ''))
+    + (held != null ? `<br><b>The logbook now holds ${num(held)} of your photos for this job.</b>` : '')
+    + (held != null && mine && mine.images.length !== held ? `<br><span style="color:#b3261e;font-weight:600">But only ${num(mine.images.length)} came back for the map. Close this window and open it again; if the numbers still differ, tell Aspex.</span>` : '');
 }
 
 // ---------- Aspex Uploader ----------
