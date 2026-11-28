@@ -215,28 +215,27 @@
   <p><b>Create jobs for past flights</b> groups your existing flights by site and date. Tick the groups you want, click <b>Create ticked jobs</b>, and they become jobs in one go.</p>
   <h3>Aspex jobs</h3>
   <p>Aspex job emails have <b>Accept this job</b> and <b>Decline</b> buttons. Accepting asks you to tick three statements (you fly as an independent operator; you've read the SWMS and will follow it; your flights on the job are shared with Aspex) and then press <b>Confirm</b>. That one acceptance counts everywhere: if you're assigned, the job shows as accepted in your logbook too. If you haven't accepted from the email, you can tick the same three statements and click <b>Accept this job</b> on the job in your logbook instead.</p>
-  <p>When you're assigned an Aspex job, it appears under <b>Aspex jobs</b> with what you need on site: the site contact (usually the O&amp;M manager) and safety requirements such as SWMS, PPE, cones and a landing pad. Flights you fly on that job are linked to it, and those are the only flights Aspex can see.</p>
+  <p>When you're assigned an Aspex job, it appears under <b>My Aspex jobs</b> (the first tab, and where the logbook opens for you) with what you need on site: the site contact (usually the O&amp;M manager) and safety requirements such as SWMS, PPE, cones and a landing pad. Flights you fly on that job are linked to it, and those are the only flights Aspex can see.</p>
   <p><b>Job pack.</b> Click <b>Job pack</b> on a job (or <b>Job pack (print / PDF)</b> on an Aspex job) for one printable page with the site map and location, the airspace check, the approvals and their conditions, the safety requirements, the site contact and the capture settings. Click <b>Print / Save as PDF</b> to print it or save it as a PDF for pilots, clients or an airport. Approval documents stay as separate files; the pack links to each one. Pilots' packs for Aspex jobs never show the client.</p>
   <h3 id="coverage">Photo coverage: checking for gaps each day</h3>
-  <p>On Aspex jobs, check your photo coverage at the end of <b>every day on site</b>, so any gaps are re-flown before you leave and nobody has to go back.</p>
-  <p><b>Each day on site:</b></p>
+  <p>On Aspex jobs, check your photo coverage at the end of <b>every day on site</b>, so any gaps are re-flown before you leave and nobody has to go back. Each Aspex job under <b>My Aspex jobs</b> lists the day as numbered steps, in the same order as Aspex Uploader:</p>
   <ol>
-    <li><b>Import that day's flight logs.</b> On Windows, run <b>Import Flights</b>. On a Mac, click <span class="btnname">Import flights</span> and drag the flight log files into the box (see <a href="#import-mac">On a Mac</a>).</li>
-    <li><b>Back up the day's SD cards to your SSD</b>, as in the Aspex Pilot Upload Guide.</li>
-    <li>Open the job under <b>Aspex jobs</b> and click <b>Check photo coverage</b>.</li>
-    <li>Drag your SSD job folder into the box, or click <b>Choose the folder…</b> and pick it. An SD card works too. On a Mac use Chrome, Edge or Safari; all three work.</li>
-    <li>Wait for <b>Done</b>. About a minute for a big job.</li>
+    <li><b>Back up every SD card to your SSD</b> with Aspex Uploader (<b>Back up card</b>). It sorts the photos into a folder for each block, such as <i>Block 14</i>, inside the job folder on your SSD. It takes the block from the mission's folder name; a flight without one goes to the block its photos were taken in, and anything outside every block goes to <i>No block</i>. On a Mac, follow the Mac part of the Aspex Pilot Upload Guide.</li>
+    <li><b>Import that day's flight logs.</b> On Windows, run <b>Import Flights</b> (or <b>Run Import Flights</b> in Aspex Uploader). On a Mac, click <span class="btnname">Import flights</span> and drag the flight log files into the box (see <a href="#import-mac">On a Mac</a>).</li>
+    <li><b>Check photo coverage.</b> Click <b>Check photo coverage</b> on the job (or in Aspex Uploader), then choose a <b>Block folder on your SSD</b>, not the SD card. To check everything at once, choose the job folder. On a Mac use Chrome, Edge or Safari.</li>
+    <li>Wait for <b>Done</b>. The map zooms to the block you chose.</li>
     <li>Look at the map. Green is covered, <b>red is a gap</b>, and the orange line is the site boundary. The list on the left gives each gap's size, largest first; click one to zoom to it.</li>
-    <li>Re-fly the gaps before you leave site.</li>
+    <li>Re-fly the gaps before you leave site, back up that card, and check again.</li>
+    <li><b>Upload overnight</b> with Aspex Uploader (<b>Start upload</b>), then <b>message Kimberly</b> with <b>Copy today's message</b>.</li>
   </ol>
-  <p><b>Nothing is copied or uploaded except a few numbers per photo.</b> The check reads only the small block at the start of each photo (position, height, camera angle and camera), where the photo already is. It needs no free space on your computer and works on a slow connection. Your photos still go to Aspex as usual with rclone.</p>
+  <p><b>Nothing is copied or uploaded except a few numbers per photo.</b> The check reads only the small block at the start of each photo (position, height, camera angle and camera), where the photo already is. It needs no free space on your computer and works on a slow connection. Your photos still go to Aspex with Aspex Uploader.</p>
   <p><b>Good to know:</b></p>
   <ul>
     <li>If the site has blocks, the coverage shows % covered and gaps for each block, and each gap is labelled with its block.</li>
     <li>Thermal photos are shown by default. Use <b>Camera</b> to switch to the wide camera or all photos.</li>
     <li>Tick or untick <b>Days</b> to see one day's coverage or the whole job.</li>
     <li>Photos not pointing straight down, or taken on the ground, aren't counted.</li>
-    <li>The same photo added twice is only counted once, so you can run the check on the whole SSD job folder each day.</li>
+    <li>Photos already added are skipped without being read again, so checking a block folder or the whole job folder a second time only reads the new photos.</li>
     <li>Some red areas may be places with no panels, such as roads, drains or the substation. Check them against the satellite image.</li>
     <li>Footprints are worked out from the drone's height above where it took off, so on hilly sites the edges of a gap are approximate.</li>
     <li>Sent the wrong folder? Click <b>Remove my photos from this job</b> and add the right one.</li>
