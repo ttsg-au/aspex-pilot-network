@@ -186,6 +186,14 @@ addEventListener('load', () => setTimeout(() => {
   .modal h3 { margin: 0 0 6px; } .modal pre { background: #17211d; color: #d7e6df; height: 320px; overflow: auto; padding: 10px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
   .tag { display: inline-block; padding: 0 6px; border-radius: 4px; background: #eef0ec; font-size: 11.5px; color: var(--muted); }
   nav.subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .daysteps { border: 2px solid var(--accent); border-radius: 10px; padding: 10px 14px 12px; background: #fbfdfc; }
+  .daysteps h3 { margin: 2px 0 8px; font-size: 15px; }
+  .daysteps ol { list-style: none; margin: 0; padding: 0; }
+  .daysteps li { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .daysteps li:first-child { border-top: 0; }
+  .daysteps .st-n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .daysteps .st-b { margin-top: 2px; } .daysteps .st-b > div { margin-top: 5px; }
+  .daysteps .st-done { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
   nav.subtabs button { font: inherit; padding: 6px 16px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; }
   nav.subtabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
   .hdot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
@@ -206,7 +214,7 @@ select.src-Nongenuine{color:#b42318;font-weight:600} select.src-GenuineDJI{color
 <header>
   <a href="/logbook-accounts" id="backLink" hidden style="color:#9fb3aa;text-decoration:none;font-size:12.5px">← Pilot Network</a>
   <h1>Flight Logbook</h1>
-  <nav class="tabs"><button data-v="logbook" class="on">Logbook</button><button data-v="aspex" hidden>Aspex jobs</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="approvals">Approvals</button><button data-v="inventory">Inventory</button><button data-v="reports">CASA logs</button><button data-v="me">Me</button><a class="tablink" href="/logbook/help" target="_blank">Help</a></nav>
+  <nav class="tabs"><button data-v="aspex" hidden>My Aspex jobs</button><button data-v="logbook" class="on">Logbook</button><button data-v="jobs">Jobs</button><button data-v="sites">Sites</button><button data-v="approvals">Approvals</button><button data-v="inventory">Inventory</button><button data-v="reports">CASA logs</button><button data-v="me">Me</button><a class="tablink" href="/logbook/help" target="_blank">Help</a></nav>
   <span class="sub" id="sub"></span>
   <span id="who" style="color:#9fb3aa;font-size:12.5px;margin:0 10px 0 auto"></span><button class="btn" id="importBtn">⤓ Import flights</button>
   <label id="nfLabel" style="margin-left:14px"><input type="checkbox" id="showNf"> show motor starts with no take-off</label>
@@ -327,6 +335,7 @@ async function load() {
   // Open a tab straight from a link, e.g. /logbook/#sites
   const [h, hk] = decodeURIComponent(location.hash.slice(1)).split('/');
   if (h && document.querySelector(`nav.tabs button[data-v="${h}"]:not([hidden])`)) showView(h);
+  else if (!h && myRole !== 'owner' && aspexJobs.length) showView('aspex');   // pilots start on their Aspex job
   if (h === 'jobs' && hk && ops.jobs[hk]) { curJob = hk; renderJobs(); }
 }
 // Each flight checked against the approvals register (needs OpenAIP data, so it loads after the logbook).

@@ -67,6 +67,24 @@ const daysOf = j => {
 };
 
 // ---------- pilot: Aspex jobs tab ----------
+// The day on site, as numbered steps: the same order as Aspex Uploader and the pilot guide.
+function daySteps(j, p) {
+  const step = (n, title, body) => `<li><div class="st-n">${n}</div><div><b>${title}</b><div class="st-b">${body}</div></div></li>`;
+  return `<div class="daysteps"><h3>Every flying day, before you leave site</h3><ol>
+    ${step(1, 'Back up every SD card to your SSD', `Open <b>Aspex Uploader</b> on your PC, choose this job and click <b>Back up card</b>, one card at a time. It sorts the photos into a folder for each block on your SSD (Block 01, Block 02 …).
+      <div class="muted">First time on this PC? <a href="aspex-uploader-setup.cmd">Download Aspex Uploader Setup</a> and double-click it. Mac: follow the Mac part of the pilot guide.</div>`)}
+    ${step(2, 'Import today’s flight logs', `Plug in the controller, switch the drone on, then run <b>Import Flights</b> (or click <b>Run Import Flights</b> in Aspex Uploader).
+      <div><button class="btn sm ghost" data-import>Import flights</button> <span class="muted">First time on this PC? <a href="import-flights.cmd">Download Import Flights</a> and save it to your desktop.</span></div>`)}
+    ${step(3, 'Check photo coverage', `Click below, then choose a <b>Block folder on your SSD</b> (for example <b>Block 14</b>), <b>not the SD card</b>. Red is a gap: re-fly it while you’re still on site, back up that card, and check again.
+      <div><button class="btn sm" data-cov>Check photo coverage</button></div>`)}
+    ${step(4, 'Upload overnight', `In Aspex Uploader click <b>Start upload</b> and leave it running. It carries on by itself after dropouts and restarts.<div data-up></div>`)}
+    ${step(5, 'Message Kimberly', `When the upload says <b>0 differences found</b>, click <b>Copy today’s message</b> in Aspex Uploader and send it to Kimberly the same day.`)}
+    </ol>
+    <div class="st-done">${p.completeAt ? `Flying marked complete ${dateOnly(p.completeAt)}. <a href="#" data-undo>Undo</a>`
+      : (j.flights || []).length ? `<b>Last day on the job?</b> Once every card is uploaded: <button class="btn sm" data-complete>Flying complete - let Aspex know</button> and send the <b>JOB COMPLETE</b> message from Aspex Uploader.`
+      : '<span class="muted">When every card for the job is uploaded, you’ll mark the job complete here.</span>'}</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Keep every card and your SSD untouched until Aspex confirms the analysis is done.</div></div>`;
+}
 function renderAspex() {
   const v = $('#v-aspex');
   v.innerHTML = aspexJobs.map((j, i) => {
@@ -85,22 +103,21 @@ function renderAspex() {
           ${j.swmsUrl ? `<p><a class="btn sm ghost" href="${esc(j.swmsUrl)}" target="_blank" rel="noopener">Open the site SWMS</a></p>` : '<p class="pill warn">The SWMS hasn’t been attached yet - Aspex will add it.</p>'}
           <button class="btn" data-accept>Accept this job</button>`}
       </div>
-      ${acked ? `<div class="form2" style="padding:0 14px 12px">
+      ${acked ? `<div style="padding:0 14px 12px">${daySteps(j, p)}</div>
+        <div class="form2" style="padding:0 14px 12px">
           <div><b>Documents and data</b><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
             ${j.swmsUrl ? `<a class="btn sm" href="${esc(j.swmsUrl)}" target="_blank" rel="noopener">Site SWMS (applies on site)</a>` : ''}
             ${j.dropboxUrl ? `<a class="btn sm ghost" href="${esc(j.dropboxUrl)}" target="_blank" rel="noopener">Dropbox job folder</a>` : ''}
             ${j.site?.boundary ? `<a class="btn sm ghost" href="aspex-jobs/${encodeURIComponent(j.key)}/site.kml">Site boundary (KML)</a>` : ''}
-            <button class="btn sm" data-pack>Job pack (print / PDF)</button> <button class="btn sm" data-cov>Check photo coverage</button></div></div>
+            <button class="btn sm" data-pack>Job pack (print / PDF)</button></div></div>
           <div><b>Aspex capture settings</b><div class="muted" style="white-space:pre-wrap;margin-top:6px">${esc(j.capture || 'None given - see the job folder.')}</div></div>
         </div>
-        <div style="padding:0 14px 12px" data-up></div>
         <div style="padding:0 14px 12px"><b>Your own pre-flight checks</b> <span class="muted">- your aircraft and operational checklists are your own; tick each day you completed them</span>
           <div class="days">${daysOf(j).map(d => `<label><input type="checkbox" data-day="${d}"${p.days?.[d] ? ' checked' : ''}> ${dateOnly(d)}</label>`).join('')}</div></div>
         <div style="padding:0 14px 12px"><b>Your flights on this job - ${flights.length} flights, ${hrs(mins)} h</b>
           <span class="muted">(shared with Aspex: take-off on this site during the job)</span>
           <table class="sum">${flights.map(f => `<tr><td>${dateOnly(f.startLocal)} ${timeOnly(f.startLocal)}</td><td>${esc(f.flightNo || '')}</td><td>${esc(model(f.aircraftModel))}</td>
             <td class="n">${num(f.durationMin, 1)} min</td><td>${f.serviceable === 'no' ? '<span class="pill bad">Defect</span> ' + esc(f.defect || '') : ''}</td></tr>`).join('') || '<tr><td class="muted">None yet - they appear here after you import them.</td></tr>'}</table>
-          ${p.completeAt ? `<p class="muted">Marked complete ${dateOnly(p.completeAt)}. <a href="#" data-undo>Undo</a></p>` : flights.length ? '<button class="btn" data-complete>Flying complete - let Aspex know</button>' : ''}
         </div>` : ''}
     </div>`;
   }).join('') || '<div class="panel"><div class="empty">No Aspex jobs assigned to you.</div></div>';
@@ -110,6 +127,7 @@ function renderAspex() {
     bindAspexApprovals(card, j);
     card.querySelector('[data-pack]')?.addEventListener('click', () => openJobPack(packFromAspex(j)));
     card.querySelector('[data-cov]')?.addEventListener('click', () => openCoverage({ key: j.key, title: j.name }));
+    card.querySelector('[data-import]')?.addEventListener('click', () => $('#importBtn').click());
     loadUploads(j.key, card.querySelector('[data-up]'));
     card.querySelector('[data-accept]')?.addEventListener('click', async () => {
       const ticks = [...card.querySelectorAll('[data-ack]')].map(c => c.checked);

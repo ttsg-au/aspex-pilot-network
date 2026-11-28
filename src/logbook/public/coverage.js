@@ -388,5 +388,7 @@ async function loadUploads(key, el) {
   el.innerHTML = `<h4>Card backups and uploads <span class="muted" style="font-weight:400">from Aspex Uploader</span></h4>
     ${d.rows.length ? `<table><tr><th>Pilot</th><th>Card backup</th><th>Upload to Aspex</th></tr>${d.rows.map(x => `<tr><td>${esc(x.name || '')}</td><td>${upCell(x.backup, 'Backing up')}</td><td>${upCell(x.upload, 'Uploading')}</td></tr>`).join('')}</table>`
       : '<p class="muted">Nothing yet. Progress appears here once Aspex Uploader is used for this job.</p>'}
-    ${d.setUp ? '' : '<p class="pill warn" style="display:block">Aspex Uploader can’t be installed yet: the upload connection setting (UPLOADER_RCLONE_CONF_B64) isn’t on the server.</p>'}`;
+    ${d.setUp ? '' : typeof myRole !== 'undefined' && myRole === 'owner'
+      ? '<p class="pill warn" style="display:block">Aspex Uploader can’t be installed yet: the upload connection setting (UPLOADER_RCLONE_CONF_B64) isn’t on the server.</p>'
+      : '<p class="pill warn" style="display:block">Aspex Uploader isn’t ready to install yet - Aspex is setting it up. Ask Kimberly.</p>'}`;
 }
