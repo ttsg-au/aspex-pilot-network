@@ -304,10 +304,16 @@ function covRender() {
 const confirmBox = (msg) => window.confirm(msg);
 
 async function covAdd(files) {
-  const jpgs = files.filter(f => /\.jpe?g$/i.test(f.name)), prog = $('#covProg');
-  if (!jpgs.length) { prog.textContent = 'No photos (.JPG) found in that folder.'; return; }
+  const all = files.filter(f => /\.jpe?g$/i.test(f.name)), prog = $('#covProg');
+  if (!all.length) { prog.textContent = 'No photos (.JPG) found in that folder.'; return; }
+  // Photos already sent are skipped without being opened, so checking the whole card or job folder again
+  // each day only reads the new ones. DJI names carry the date and time taken, so a name is unique.
+  const mine = covState.data.people.find(p => p.uid === covState.data.me);
+  const have = new Set((mine?.images || []).map(i => i.f).filter(f => /^DJI_\d{14}_/i.test(f)));
+  const jpgs = all.filter(f => !have.has(f.name)), already = all.length - jpgs.length;
+  if (!jpgs.length) { prog.textContent = `All ${num(all.length)} photos in that folder are already in the coverage map.`; return; }
   const out = [], skip = { nogps: 0, bad: 0 }; let done = 0, i = 0, held = null; const t0 = Date.now();
-  const show = () => { prog.textContent = `Reading photos: ${num(done)} of ${num(jpgs.length)}…`; };
+  const show = () => { prog.textContent = `Reading new photos: ${num(done)} of ${num(jpgs.length)}…` + (already ? ` (${num(already)} already in, skipped)` : ''); };
   show(); const tick = setInterval(show, 300);
   await Promise.all(Array.from({ length: 8 }, async () => {
     while (i < jpgs.length) { const f = jpgs[i++];
@@ -323,10 +329,10 @@ async function covAdd(files) {
   }
   const secs = Math.round((Date.now() - t0) / 1000);
   await covLoad();
-  const mine = covState.data.people.find(p => p.uid === covState.data.me);
-  $('#covProg').innerHTML = esc(`Done: ${num(out.length)} photos read and sent in ${secs} s.` + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : ''))
+  const meNow = covState.data.people.find(p => p.uid === covState.data.me);
+  $('#covProg').innerHTML = esc(`Done: ${num(out.length)} new photos read and sent in ${secs} s.` + (already ? ` ${num(already)} were already in.` : '') + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : ''))
     + (held != null ? `<br><b>The logbook now holds ${num(held)} of your photos for this job.</b>` : '')
-    + (held != null && mine && mine.images.length !== held ? `<br><span style="color:#b3261e;font-weight:600">But only ${num(mine.images.length)} came back for the map. Close this window and open it again; if the numbers still differ, tell Aspex.</span>` : '');
+    + (held != null && meNow && meNow.images.length !== held ? `<br><span style="color:#b3261e;font-weight:600">But only ${num(meNow.images.length)} came back for the map. Close this window and open it again; if the numbers still differ, tell Aspex.</span>` : '');
 }
 
 // ---------- Aspex Uploader ----------
