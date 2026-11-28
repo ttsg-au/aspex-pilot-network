@@ -470,9 +470,11 @@ function Start-Phase {
         }
         'check' {
             $lStatus.Text = "$what finished. Checking every file arrived..."
+            $lDetail.Text = 'Comparing every file name and size. On a big job this can take a few minutes; the bar moves while it works.'
             $bar.Style = 'Marquee'
-            if ($s.Task -eq 'backup') { Start-Rclone @('check', $s.Source, $s.Dest, '--one-way') $false }
-            else { Start-Rclone @('check', $s.Source, $s.Dest, '--size-only', '--one-way') $false }
+            # The copy already checked every file's MD5 as it went, so this only confirms every file is there
+            # at the right size - seconds, instead of reading the whole card and SSD again.
+            Start-Rclone @('check', $s.Source, $s.Dest, '--size-only', '--one-way') $false
         }
         'size' {
             $lStatus.Text = 'Checked. Adding up the totals...'
@@ -610,8 +612,10 @@ $timer.Add_Tick({
     if (-not $script:Proc) { return }
     $text = Read-NewLog
     if ($text) {
-        $ms = [regex]::Matches($text, $StatsRegex)
-        if ($ms.Count -gt 0) { Update-Progress $ms[$ms.Count - 1] }
+        if ($script:State['Phase'] -eq 'copy') {
+            $ms = [regex]::Matches($text, $StatsRegex)
+            if ($ms.Count -gt 0) { Update-Progress $ms[$ms.Count - 1] }
+        }
     }
     if ($script:Proc.HasExited) { On-Exit }
 })
