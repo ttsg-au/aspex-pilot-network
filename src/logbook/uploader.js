@@ -35,15 +35,23 @@ function rcloneConf() {
 }
 const safeName = (s) => String(s || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 100);
 
+// A block's folder name: "Block 08" from a KML named "..._block_8_...", otherwise its own name.
+const blockLabel = (name) => { const m = /block[ _-]?0*(\d+)/i.exec(name || ''); return m ? 'Block ' + String(+m[1]).padStart(2, '0') : safeName(name) || 'Block'; };
+// The job's block outlines (outer rings only, ~1 m precision), so the app can sort flights into block folders.
+const blocksOut = (blocks) => (Array.isArray(blocks) ? blocks : []).map(b => ({
+  label: blockLabel(b.name),
+  rings: (b.polys || []).map(p => (p[0] || []).map(([x, y]) => [Math.round(x * 1e5) / 1e5, Math.round(y * 1e5) / 1e5])),
+}));
+
 // Jobs this person can upload to: the owner's own jobs, or the Aspex jobs a pilot is assigned to.
 function jobsFor(u) {
   if (u.role === 'owner') {
     const ops = store.ops(u.id);
     return Object.entries(ops.jobs || {})
       .filter(([, j]) => j && j.status !== 'Cancelled')
-      .map(([key, j]) => ({ key, name: j.name || 'Untitled job', start: j.start || '', site: ops.sites?.[j.siteId]?.name || '' }));
+      .map(([key, j]) => ({ key, name: j.name || 'Untitled job', start: j.start || '', site: ops.sites?.[j.siteId]?.name || '', blocks: blocksOut(ops.sites?.[j.siteId]?.blocks) }));
   }
-  return require('./network').jobsFor(u).map(j => ({ key: j.key, name: j.name || 'Aspex job', start: j.start || '', site: j.site?.name || '' }));
+  return require('./network').jobsFor(u).map(j => ({ key: j.key, name: j.name || 'Aspex job', start: j.start || '', site: j.site?.name || '', blocks: blocksOut(j.site?.blocks) }));
 }
 
 // ---------- for the app on the pilot's PC (upload key checked by routes.js) ----------
@@ -168,4 +176,4 @@ ${ps.trim()}
 `.replace(/\r?\n/g, '\r\n');
 }
 
-module.exports = { pc, router, version, setupCmd, jobsFor };
+module.exports = { pc, router, version, setupCmd, jobsFor, blockLabel };

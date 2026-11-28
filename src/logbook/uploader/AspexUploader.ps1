@@ -126,6 +126,125 @@ function Parse-Size([string]$s) {
     return $n * [Math]::Pow(1024, $p)
 }
 
+# ---------- Sorting a card's flights into block folders ----------
+# DJI names each mission's photo folder after the mission, and a mission made from a block KML carries
+# the block number ("..._block_14_..."). That decides the block. A folder without one (a test flight,
+# a manual flight) goes to the block its photos were taken in, using the job's block outlines from the
+# logbook. Anything else goes to "No block", so nothing is ever left out.
+function Get-BlockLabel([string]$name) {
+    if ($name -match 'block[ _-]?0*(\d+)') { return ('Block {0:D2}' -f [int]$Matches[1]) }
+    return $null
+}
+# The position a photo was taken at, from the first 128 KB only: DJI's XMP, else the EXIF GPS tags.
+function Read-PhotoGps([string]$file) {
+    try {
+        $fs = [IO.File]::OpenRead($file)
+        try { $buf = New-Object byte[] ([Math]::Min(131072, $fs.Length)); [void]$fs.Read($buf, 0, $buf.Length) } finally { $fs.Dispose() }
+    } catch { return $null }
+    $txt = [Text.Encoding]::ASCII.GetString($buf)
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    if ($txt -match 'drone-dji:GpsLatitude="?([-+]?[\d.]+)' ) {
+        $lat = [double]::Parse($Matches[1], $inv)
+        if ($txt -match 'drone-dji:GpsLong(?:t)?itude="?([-+]?[\d.]+)') {
+            $lon = [double]::Parse($Matches[1], $inv)
+            if ($lat -ne 0 -or $lon -ne 0) { return ,@($lon, $lat) }
+        }
+    }
+    # EXIF: find the TIFF header after "Exif\0\0", then IFD0 -> GPS IFD (tag 0x8825) -> tags 1-4.
+    $at = $txt.IndexOf("Exif`0`0"); if ($at -lt 0) { return $null }
+    $t = $at + 6; if ($t + 8 -gt $buf.Length) { return $null }
+    $le = ($buf[$t] -eq 0x49)
+    $u16 = { param($o) if ($le) { [int]$buf[$t+$o] + 256 * $buf[$t+$o+1] } else { 256 * $buf[$t+$o] + [int]$buf[$t+$o+1] } }
+    $u32 = { param($o) if ($le) { [uint32]$buf[$t+$o] + 256 * ([uint32]$buf[$t+$o+1] + 256 * ([uint32]$buf[$t+$o+2] + 256 * [uint32]$buf[$t+$o+3])) }
+                       else { [uint32]$buf[$t+$o+3] + 256 * ([uint32]$buf[$t+$o+2] + 256 * ([uint32]$buf[$t+$o+1] + 256 * [uint32]$buf[$t+$o])) } }
+    try {
+        $ifd0 = & $u32 4; $n = & $u16 $ifd0; $gps = 0
+        for ($k = 0; $k -lt $n; $k++) { $e = $ifd0 + 2 + 12 * $k; if ((& $u16 $e) -eq 0x8825) { $gps = & $u32 ($e + 8) } }
+        if (-not $gps) { return $null }
+        $g = @{}; $n = & $u16 $gps
+        for ($k = 0; $k -lt $n; $k++) {
+            $e = $gps + 2 + 12 * $k; $tag = & $u16 $e
+            if ($tag -eq 1 -or $tag -eq 3) { $g[$tag] = [char]$buf[$t + $e + 8] }
+            elseif ($tag -eq 2 -or $tag -eq 4) {
+                $o = & $u32 ($e + 8); $v = 0.0
+                for ($r = 0; $r -lt 3; $r++) { $d = & $u32 ($o + 8 * $r + 4); if ($d) { $v += (& $u32 ($o + 8 * $r)) / $d / [Math]::Pow(60, $r) } }
+                $g[$tag] = $v
+            }
+        }
+        if ($g[2] -eq $null -or $g[4] -eq $null) { return $null }
+        $lat = $g[2]; $lon = $g[4]
+        if ($g[1] -eq 'S') { $lat = -$lat }; if ($g[3] -eq 'W') { $lon = -$lon }
+        if ($lat -eq 0 -and $lon -eq 0) { return $null }
+        return ,@($lon, $lat)
+    } catch { return $null }
+}
+function Test-InRing($x, $y, $ring) {
+    $in = $false; $j = $ring.Count - 1
+    for ($i = 0; $i -lt $ring.Count; $i++) {
+        $xi = [double]$ring[$i][0]; $yi = [double]$ring[$i][1]; $xj = [double]$ring[$j][0]; $yj = [double]$ring[$j][1]
+        if ((($yi -gt $y) -ne ($yj -gt $y)) -and ($x -lt ($xj - $xi) * ($y - $yi) / ($yj - $yi) + $xi)) { $in = -not $in }
+        $j = $i
+    }
+    return $in
+}
+function Get-RingMetres($x, $y, $ring) {
+    $mLat = 110950.0; $mLon = 111320.0 * [Math]::Cos($y * [Math]::PI / 180); $best = [double]::MaxValue
+    for ($i = 0; $i -lt $ring.Count - 1; $i++) {
+        $ax = ([double]$ring[$i][0] - $x) * $mLon; $ay = ([double]$ring[$i][1] - $y) * $mLat
+        $bx = ([double]$ring[$i+1][0] - $x) * $mLon; $by = ([double]$ring[$i+1][1] - $y) * $mLat
+        $dx = $bx - $ax; $dy = $by - $ay; $l = $dx * $dx + $dy * $dy; $f = 0
+        if ($l -gt 0) { $f = [Math]::Max(0, [Math]::Min(1, -($ax * $dx + $ay * $dy) / $l)) }
+        $px = $ax + $f * $dx; $py = $ay + $f * $dy; $d = [Math]::Sqrt($px * $px + $py * $py)
+        if ($d -lt $best) { $best = $d }
+    }
+    return $best
+}
+# Which job block a point is in ($null if none). Just outside an edge (turns at the end of a line) counts, up to 50 m.
+function Get-BlockAt($lon, $lat, $blocks) {
+    foreach ($b in $blocks) { foreach ($r in $b.rings) { if (Test-InRing $lon $lat $r) { return [string]$b.label } } }
+    $near = $null; $nd = 50.0
+    foreach ($b in $blocks) { foreach ($r in $b.rings) { $d = Get-RingMetres $lon $lat $r; if ($d -lt $nd) { $nd = $d; $near = [string]$b.label } } }
+    return $near
+}
+# A flight folder with no block in its name: the block most of a sample of its photos fall in.
+function Get-FolderBlock([string]$dir, $blocks) {
+    if (-not $blocks -or @($blocks).Count -eq 0) { return $null }
+    $jpgs = @(Get-ChildItem -LiteralPath $dir -Recurse -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '^\.jpe?g$' } | Sort-Object Name)
+    if ($jpgs.Count -eq 0) { return $null }
+    $step = [Math]::Max(1, [Math]::Floor($jpgs.Count / 12)); $votes = @{}; $seen = 0
+    for ($i = 0; $i -lt $jpgs.Count; $i += $step) {
+        $g = Read-PhotoGps $jpgs[$i].FullName; if (-not $g) { continue }
+        $seen++; $b = Get-BlockAt $g[0] $g[1] $blocks
+        if ($b) { $votes[$b] = 1 + [int]$votes[$b] }
+    }
+    if (-not $seen -or $votes.Count -eq 0) { return $null }
+    $top = $votes.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 1
+    if ($top.Value -lt 0.5 * $seen) { return $null }      # mostly outside every block: leave it to "No block"
+    return [string]$top.Key
+}
+# What a card backup copies where: one item per flight folder, into <job folder>\<Block NN>\<flight folder>.
+# A job with no blocks, on a card with no block names, is copied as before (the whole DCIM into the job folder).
+# A flight already backed up the old way (straight into the job folder) stays there, so nothing is copied twice.
+function Get-BackupPlan([string]$src, [string]$dest, $blocks) {
+    $dirs = @(Get-ChildItem -LiteralPath $src -Directory -ErrorAction SilentlyContinue | Sort-Object Name)
+    $hasBlocks = ($blocks -and @($blocks).Count -gt 0)
+    $named = @($dirs | Where-Object { Get-BlockLabel $_.Name })
+    if (-not $hasBlocks -and $named.Count -eq 0) { return ,@(@{ Src = $src; Dest = $dest; Label = ''; Flat = $false }) }
+    $items = @()
+    foreach ($d in $dirs) {
+        $old = Join-Path $dest $d.Name
+        if (Test-Path -LiteralPath $old) { $items += @{ Src = $d.FullName; Dest = $old; Label = 'already on the SSD'; Flat = $false }; continue }
+        $label = Get-BlockLabel $d.Name
+        if (-not $label) { $label = Get-FolderBlock $d.FullName $blocks }
+        if (-not $label) { $label = 'No block' }
+        $items += @{ Src = $d.FullName; Dest = (Join-Path (Join-Path $dest $label) $d.Name); Label = $label; Flat = $false }
+    }
+    if (@(Get-ChildItem -LiteralPath $src -File -ErrorAction SilentlyContinue).Count) {
+        $items += @{ Src = $src; Dest = (Join-Path (Join-Path $dest 'No block') 'Card files'); Label = 'No block'; Flat = $true }
+    }
+    return ,@($items)
+}
+
 $script:Proc = $null
 $script:LogFile = $null
 $script:LogPos = 0
@@ -208,7 +327,7 @@ $fontBig  = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontS
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Aspex Uploader - Aspex Drone Services'
-$form.Size = New-Object System.Drawing.Size(860, 790)
+$form.Size = New-Object System.Drawing.Size(860, 805)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedSingle'
 $form.MaximizeBox = $false
@@ -240,7 +359,7 @@ function New-Group($text, $x, $y, $w, $h) {
 }
 
 # Pilot and job
-$gJob = New-Group 'Pilot and job' 15 10 815 95
+$gJob = New-Group 'Pilot and job' 15 8 815 96
 $gJob.Controls.Add((New-Label 'Pilot' 15 30 50 22))
 $tPilot = New-Box 65 27 200; $tPilot.ReadOnly = $true
 $gJob.Controls.Add($tPilot)
@@ -264,8 +383,9 @@ if (Test-Path -LiteralPath $logoPath) {
 }
 $form.Controls.Add($gJob)
 
-# Section 1: back up
-$g1 = New-Group '1. Back up an SD card to your SSD' 15 115 815 175
+# The day's work, in order: 1 back up, 2 import flights, 3 check coverage, 4 upload, 5 message.
+# Step 1: back up (sorted into block folders)
+$g1 = New-Group '1. Back up each SD card to your SSD (sorted into block folders)' 15 112 815 168
 $g1.Controls.Add((New-Label 'SD card' 15 32 120 22))
 $cCard = New-Object System.Windows.Forms.ComboBox
 $cCard.DropDownStyle = 'DropDownList'; $cCard.Font = $font
@@ -276,61 +396,76 @@ $g1.Controls.Add((New-Label 'SSD' 15 70 120 22))
 $tSsd = New-Box 140 67 450; $tSsd.ReadOnly = $true
 $g1.Controls.Add($tSsd)
 $bSsd = New-Button 'Choose...' 600 65 90 30; $g1.Controls.Add($bSsd)
-$lBackupTo = New-Label 'Backs up to: (choose your SSD and the job)' 15 105 780 22
+$lBackupTo = New-Label 'Backs up to: (choose your SSD and the job)' 15 103 780 22
 $g1.Controls.Add($lBackupTo)
-$bBackup = New-Button 'Back up card' 15 132 200 34; $bBackup.Font = $fontBold
+$bBackup = New-Button 'Back up card' 15 127 200 32; $bBackup.Font = $fontBold
 $g1.Controls.Add($bBackup)
-$bCoverage = New-Button 'Check photo coverage' 230 132 220 34
-$g1.Controls.Add($bCoverage)
+$g1.Controls.Add((New-Label 'Do every card from the day, one at a time.' 230 133 560 22))
 $form.Controls.Add($g1)
 
-# Section 2: upload
-$g2 = New-Group '2. Upload to Aspex' 15 300 815 175
+# Step 2: flight logs
+$g2i = New-Group "2. Import today's flight logs" 15 288 400 100
+$g2i.Controls.Add((New-Label 'Plug in the controller and switch the drone on, then:' 15 27 375 22))
+$bImport = New-Button 'Run Import Flights' 15 54 200 32
+$g2i.Controls.Add($bImport)
+$form.Controls.Add($g2i)
+
+# Step 3: coverage
+$g3 = New-Group '3. Check photo coverage' 430 288 400 100
+$g3.Controls.Add((New-Label 'Choose a Block folder on the SSD, not the SD card.' 15 27 375 22))
+$bCoverage = New-Button 'Check photo coverage' 15 54 200 32
+$g3.Controls.Add($bCoverage)
+$bOpenSsd = New-Button 'Open the job folder' 225 54 160 32
+$g3.Controls.Add($bOpenSsd)
+$form.Controls.Add($g3)
+
+# Step 4: upload
+$g4 = New-Group '4. Upload to Aspex (leave it running overnight)' 15 396 815 128
 $rSsd = New-Object System.Windows.Forms.RadioButton
 $rSsd.Text = 'From the SSD job folder (recommended)'; $rSsd.Font = $font; $rSsd.Checked = $true
-$rSsd.Location = New-Object System.Drawing.Point(15, 30); $rSsd.Size = New-Object System.Drawing.Size(340, 24)
-$g2.Controls.Add($rSsd)
+$rSsd.Location = New-Object System.Drawing.Point(15, 26); $rSsd.Size = New-Object System.Drawing.Size(340, 24)
+$g4.Controls.Add($rSsd)
 $rCard = New-Object System.Windows.Forms.RadioButton
 $rCard.Text = 'From the SD card chosen above'; $rCard.Font = $font
-$rCard.Location = New-Object System.Drawing.Point(370, 30); $rCard.Size = New-Object System.Drawing.Size(300, 24)
-$g2.Controls.Add($rCard)
-$g2.Controls.Add((New-Label 'Files at once' 15 67 120 22))
+$rCard.Location = New-Object System.Drawing.Point(370, 26); $rCard.Size = New-Object System.Drawing.Size(300, 24)
+$g4.Controls.Add($rCard)
+$g4.Controls.Add((New-Label 'Files at once' 15 59 120 22))
 $cTransfers = New-Object System.Windows.Forms.ComboBox
 $cTransfers.DropDownStyle = 'DropDownList'; $cTransfers.Font = $font
-$cTransfers.Location = New-Object System.Drawing.Point(140, 64); $cTransfers.Size = New-Object System.Drawing.Size(80, 26)
+$cTransfers.Location = New-Object System.Drawing.Point(140, 56); $cTransfers.Size = New-Object System.Drawing.Size(80, 26)
 [void]$cTransfers.Items.AddRange(@('16', '32', '48', '64'))
-$g2.Controls.Add($cTransfers)
-$g2.Controls.Add((New-Label '16: under 10 Mbps upload   32: Starlink / 10-40 Mbps   48: 40-100 Mbps   64: over 100 Mbps' 230 67 570 22))
-$lUploadTo = New-Label 'Uploads to: Aspex' 15 105 780 22
-$g2.Controls.Add($lUploadTo)
-$bUpload = New-Button 'Start upload' 15 132 200 34; $bUpload.Font = $fontBold
-$g2.Controls.Add($bUpload)
-$form.Controls.Add($g2)
+$g4.Controls.Add($cTransfers)
+$g4.Controls.Add((New-Label '16: under 10 Mbps upload   32: Starlink / 10-40 Mbps   48: 40-100 Mbps   64: over 100 Mbps' 230 59 570 22))
+$lUploadTo = New-Label 'Uploads to: Aspex' 15 93 570 22
+$g4.Controls.Add($lUploadTo)
+$bUpload = New-Button 'Start upload' 600 86 200 32; $bUpload.Font = $fontBold
+$g4.Controls.Add($bUpload)
+$form.Controls.Add($g4)
 
 # Progress
-$gP = New-Group 'Progress' 15 485 815 150
-$lStatus = New-Label 'Ready.' 15 28 785 26; $lStatus.Font = $fontBig
+$gP = New-Group 'Progress' 15 532 815 140
+$lStatus = New-Label 'Ready.' 15 26 785 26; $lStatus.Font = $fontBig
 $gP.Controls.Add($lStatus)
 $bar = New-Object System.Windows.Forms.ProgressBar
-$bar.Location = New-Object System.Drawing.Point(15, 58); $bar.Size = New-Object System.Drawing.Size(660, 24)
+$bar.Location = New-Object System.Drawing.Point(15, 56); $bar.Size = New-Object System.Drawing.Size(660, 24)
 $bar.Minimum = 0; $bar.Maximum = 100
 $gP.Controls.Add($bar)
-$bStop = New-Button 'Stop' 690 55 110 30; $bStop.Enabled = $false
+$bStop = New-Button 'Stop' 690 53 110 30; $bStop.Enabled = $false
 $gP.Controls.Add($bStop)
-$lDetail = New-Label '' 15 90 785 24
+$lDetail = New-Label '' 15 86 785 24
 $gP.Controls.Add($lDetail)
-$lExtra = New-Label '' 15 116 785 24
+$lExtra = New-Label '' 15 110 785 24
 $gP.Controls.Add($lExtra)
 $form.Controls.Add($gP)
 
-# Messages for Kimberly
-$gM = New-Group 'Message for Kimberly' 15 645 815 85
-$gM.Controls.Add((New-Label 'Blocks flown today' 15 33 140 22))
-$tBlocks = New-Box 160 30 150
+# Step 5: message
+$gM = New-Group '5. Message Kimberly (after the upload finishes)' 15 680 815 75
+$gM.Controls.Add((New-Label 'Blocks flown today' 15 31 140 22))
+$tBlocks = New-Box 160 28 150
 $gM.Controls.Add($tBlocks)
-$bMsgDay = New-Button "Copy today's message" 325 28 220 32; $bMsgDay.Enabled = $false
+$bMsgDay = New-Button "Copy today's message" 325 26 220 32; $bMsgDay.Enabled = $false
 $gM.Controls.Add($bMsgDay)
-$bMsgDone = New-Button 'Copy JOB COMPLETE message' 555 28 245 32; $bMsgDone.Enabled = $false
+$bMsgDone = New-Button 'Copy JOB COMPLETE message' 555 26 245 32; $bMsgDone.Enabled = $false
 $gM.Controls.Add($bMsgDone)
 $form.Controls.Add($gM)
 
@@ -424,12 +559,39 @@ function Start-Task([string]$task, [string]$source, [string]$dest) {
         Started = (Get-Date).ToString('s'); FileCount = $null; ByteCount = $null; ElapsedSec = 0; Reconnects = 0
     }
     $script:CheckOk = $false
+    if ($task -eq 'backup') {
+        $lStatus.Text = "Sorting the card's flights into block folders..."; $lDetail.Text = ''
+        [System.Windows.Forms.Application]::DoEvents()
+        $script:State.Items = Get-BackupPlan $source $dest @($j.blocks | Where-Object { $_ })
+        $script:State.Index = 0
+    }
     Save-State
     $bMsgDay.Enabled = $false; $bMsgDone.Enabled = $false
     Set-Busy $true
     Set-Awake $true
     $script:LastTick = Get-Date
     Start-Phase
+}
+
+# The folders a backup copies, one at a time (an upload, or a backup from an older version, is one item).
+function Get-Items {
+    $s = $script:State
+    if ($s['Items'] -and @($s['Items']).Count) { return ,@($s['Items']) }
+    return ,@(@{ Src = $s.Source; Dest = $s.Dest; Label = ''; Flat = $false })
+}
+function Get-CurrentItem { $it = Get-Items; return $it[[Math]::Min([int]$script:State['Index'], $it.Count - 1)] }
+function Get-ItemText {
+    $all = Get-Items; if ($all.Count -le 1) { return '' }
+    $it = Get-CurrentItem; $t = " - flight $([int]$script:State['Index'] + 1) of $($all.Count)"
+    if ($it.Label) { $t += " ($($it.Label))" }
+    return $t
+}
+# Move on to the next folder of a backup; $false when there are no more.
+function Next-Item {
+    if ($script:State.Task -ne 'backup') { return $false }
+    $i = [int]$script:State['Index'] + 1
+    if ($i -ge (Get-Items).Count) { return $false }
+    $script:State.Index = $i; Save-State; return $true
 }
 
 function Wait-Then([int]$seconds, [string]$reason) {
@@ -460,8 +622,10 @@ function Start-Phase {
     switch ($s.Phase) {
         'copy' {
             if ($s.Task -eq 'backup') {
-                $lStatus.Text = 'Backing up the card to the SSD...'
-                Start-Rclone @('copy', $s.Source, $s.Dest, '--retries', '3') $false
+                $it = Get-CurrentItem
+                $lStatus.Text = 'Backing up the card to the SSD' + (Get-ItemText) + '...'
+                $a = @('copy', $it.Src, $it.Dest, '--retries', '3'); if ($it.Flat) { $a += @('--max-depth', '1') }
+                Start-Rclone $a $false
             } else {
                 $lStatus.Text = 'Uploading to Aspex...'
                 Start-Rclone @('copy', $s.Source, $s.Dest, '--size-only', '--transfers', $s.Transfers, '--checkers', '16',
@@ -469,12 +633,20 @@ function Start-Phase {
             }
         }
         'check' {
-            $lStatus.Text = "$what finished. Checking every file arrived..."
-            $lDetail.Text = 'Comparing every file name and size. On a big job this can take a few minutes; the bar moves while it works.'
             $bar.Style = 'Marquee'
             # The copy already checked every file's MD5 as it went, so this only confirms every file is there
             # at the right size - seconds, instead of reading the whole card and SSD again.
-            Start-Rclone @('check', $s.Source, $s.Dest, '--size-only', '--one-way') $false
+            if ($s.Task -eq 'backup') {
+                $it = Get-CurrentItem
+                $lStatus.Text = 'Backup finished. Checking every file arrived' + (Get-ItemText) + '...'
+                $lDetail.Text = 'Comparing every file name and size.'
+                $a = @('check', $it.Src, $it.Dest, '--size-only', '--one-way'); if ($it.Flat) { $a += @('--max-depth', '1') }
+                Start-Rclone $a $false
+            } else {
+                $lStatus.Text = "$what finished. Checking every file arrived..."
+                $lDetail.Text = 'Comparing every file name and size. On a big job this can take a few minutes; the bar moves while it works.'
+                Start-Rclone @('check', $s.Source, $s.Dest, '--size-only', '--one-way') $false
+            }
         }
         'size' {
             $lStatus.Text = 'Checked. Adding up the totals...'
@@ -495,7 +667,10 @@ function Finish-Task {
     $script:Live = @{ pct = 100 }
     if ($s.Task -eq 'backup') {
         $lStatus.Text = 'Backup complete - 0 differences found.'
-        $lDetail.Text = "The card is safely copied to $($s.Dest). Keep the card until Aspex confirms the data has been analysed."
+        $sorted = @((Get-Items) | Where-Object { $_.Label -and $_.Label -ne 'already on the SSD' } | Group-Object Label | Sort-Object Name |
+            ForEach-Object { "$($_.Name) ($($_.Count))" })
+        if ($sorted.Count) { $lDetail.Text = 'Flights sorted into: ' + ($sorted -join ', ') + '. Next: step 3, check coverage from the Block folders on the SSD.' }
+        else { $lDetail.Text = "Copied to $($s.Dest). Keep the card until Aspex confirms the data has been analysed." }
     } else {
         $lStatus.Text = 'Upload complete - 0 differences found.'
         if ($s.FileCount -ne $null) { $lDetail.Text = ('Total uploaded for this job: {0:N0} files, {1}. Aspex can see this on the job page.' -f [double]$s.FileCount, (Format-Size ([double]$s.ByteCount))) }
@@ -528,7 +703,10 @@ function On-Exit {
     $bar.Style = 'Blocks'
     switch ($s.Phase) {
         'copy' {
-            if ($code -eq 0) { $s.Phase = 'check'; Save-State; Start-Phase }
+            if ($code -eq 0) {
+                if (Next-Item) { Start-Phase }
+                else { $s.Phase = 'check'; $s.Index = 0; Save-State; Start-Phase }
+            }
             else {
                 $lStatus.Text = 'Connection or drive lost. Retrying in 30 seconds - nothing is lost.'
                 Wait-Then 30 'retry'
@@ -538,6 +716,7 @@ function On-Exit {
             if ($code -eq 0 -and $log -match '\b0 differences found') {
                 $script:CheckOk = $true
                 if ($s.Task -eq 'upload') { $s.Phase = 'size'; Save-State; Start-Phase }
+                elseif (Next-Item) { Start-Phase }
                 else { Finish-Task }
             } else {
                 $s.Phase = 'copy'; Save-State
@@ -640,11 +819,28 @@ $bBackup.Add_Click({
     Start-Task 'backup' $src $dest
 })
 
+$bImport.Add_Click({
+    # Import Flights is the .cmd each pilot downloads from the logbook to the desktop.
+    $places = @([Environment]::GetFolderPath('Desktop'), (Join-Path $env:USERPROFILE 'Downloads'), (Join-Path $env:USERPROFILE 'Desktop'))
+    $f = $places | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter 'Import Flights*.cmd' -File -ErrorAction SilentlyContinue } |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($f) { Start-Process -FilePath $f.FullName -WorkingDirectory $f.DirectoryName; return }
+    [System.Windows.Forms.MessageBox]::Show("Import Flights isn't on this computer yet.`n`nThe logbook will open: click Import flights (top right), then 'Download Import Flights' and save it to your desktop. Then press this button again.", 'Aspex Uploader') | Out-Null
+    Start-Process ($script:Site + '/logbook/')
+})
+$bOpenSsd.Add_Click({
+    $f = Get-SsdJobFolder
+    if (-not $f -or -not (Test-Path -LiteralPath $f)) { [System.Windows.Forms.MessageBox]::Show('Back up a card first (step 1). The job folder is made on the SSD then.', 'Aspex Uploader') | Out-Null; return }
+    Start-Process explorer.exe -ArgumentList ('"' + $f + '"')
+})
+
 $bCoverage.Add_Click({
     $j = Get-SelectedJob
     if (-not $j) { [System.Windows.Forms.MessageBox]::Show('Choose the job first.', 'Aspex Uploader') | Out-Null; return }
     $url = $script:Site + '/logbook/#coverage=' + [uri]::EscapeDataString([string]$j.key) + '&t=' + [uri]::EscapeDataString([string]$j.name)
     Start-Process $url
+    $f = Get-SsdJobFolder
+    if ($f) { $lDetail.Text = "In the coverage map, choose a Block folder inside $f" }
 })
 
 $bUpload.Add_Click({
@@ -656,7 +852,7 @@ $bUpload.Add_Click({
         $src = "$drive\DCIM"
     } else {
         $src = Get-SsdJobFolder
-        if (-not $src) { [System.Windows.Forms.MessageBox]::Show('Choose your SSD first (section 1).', 'Aspex Uploader') | Out-Null; return }
+        if (-not $src) { [System.Windows.Forms.MessageBox]::Show('Choose your SSD first (step 1).', 'Aspex Uploader') | Out-Null; return }
     }
     if (-not (Test-Path -LiteralPath $src)) { [System.Windows.Forms.MessageBox]::Show("Can't find $src.", 'Aspex Uploader') | Out-Null; return }
     $dest = "aspex:Uploads/$j/$p"

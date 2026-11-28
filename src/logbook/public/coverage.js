@@ -99,8 +99,12 @@ async function covFilesFromDrop(dt) {
     more();
   });
   for (const e of entries) await walk(e);
+  out.folder = entries.length === 1 ? entries[0].name : '';
   return out;
 }
+
+// A block's short name, the same as its folder on the SSD: "Block 08" from a KML named "..._block_8_...".
+const covBlockName = (n) => { const m = /block[ _-]?0*(\d+)/i.exec(n || ''); return m ? 'Block ' + String(+m[1]).padStart(2, '0') : (n || 'Block'); };
 
 // ---------- Drawing coverage ----------
 // A grid over the site in degrees (cells ~1-3 m). Bit 1 = inside the boundary, bit 2 = covered by a photo.
@@ -204,7 +208,7 @@ async function covLoad() {
     covState.bLayer = L.polygon(d.boundary.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 2, fill: false }).addTo(covMap);
     covState.blkLayer?.remove();
     covState.blkLayer = L.layerGroup((d.blocks || []).map(b => L.polygon(b.polys.map(poly => poly.map(r => r.map(([x, y]) => [y, x]))), { color: '#ffb000', weight: 1, fill: false, interactive: false })
-      .bindTooltip(esc(b.name), { permanent: true, direction: 'center', className: 'blk-lbl' }))).addTo(covMap);
+      .bindTooltip(esc(covBlockName(b.name)), { permanent: true, direction: 'center', className: 'blk-lbl' }))).addTo(covMap);
     if (!covState.fitted) { covMap.fitBounds(covState.bLayer.getBounds(), { padding: [20, 20] }); covState.fitted = 1; }
   } else if (all.length && !covState.fitted) { covMap.fitBounds(all.map(i => [i.lat, i.lon])); covState.fitted = 1; }
   else if (!covState.fitted) covMap.setView([-28, 134], 4);
@@ -222,7 +226,7 @@ function covRender() {
   let stats = '';
   if (d.boundary && used.length) {
     const rings = d.boundary.flat(); rings.__polys = d.boundary;
-    const blocks = d.blocks || [];
+    const blocks = (d.blocks || []).map(b => ({ ...b, name: covBlockName(b.name) }));
     const G = covGrid(rings, used, blocks), { g, lab, cols, rows } = G;
     const bIn = new Float64Array(blocks.length + 1), bCov = new Float64Array(blocks.length + 1);
     let inside = 0, covIn = 0;
@@ -278,8 +282,9 @@ function covRender() {
     ${days.length ? `<h3>Days</h3>${days.map(x => `<label><input type="checkbox" data-day="${x}"${covState.days.has(x) ? ' checked' : ''}> ${dateOnly(x)}</label>`).join('')}` : ''}
     ${d.people.length ? `<h3>Pilots</h3>${d.people.map(p => `<label><input type="checkbox" data-person="${p.uid}"${covState.people.has(p.uid) ? ' checked' : ''}> ${esc(p.name)} <span class="muted">(${num(p.count)} photos)</span></label>`).join('')}` : ''}
     ${covState.canAdd ? `<h3>Add photos</h3>
-      <div class="muted">Point this at the job folder on your SSD, or the SD card. Only the position details in each photo are read; the photos stay where they are and nothing is uploaded except a few numbers per photo.</div>
-      <div class="drop" id="covDrop">Drag the photo folder here<br>or <button class="btn sm" id="covPick">Choose the folder…</button>
+      <div><b>Use the SSD, not the SD card.</b> Aspex Uploader sorts each card into block folders on your SSD. To check a block, choose that block’s folder (for example <b>Block 14</b> inside the job folder); to check everything, choose the job folder.</div>
+      <div class="muted" style="margin-top:4px">Only the position details in each photo are read; the photos stay where they are. Photos already added are skipped, so checking a folder again only reads the new ones.</div>
+      <div class="drop" id="covDrop">Drag the Block folder here<br>or <button class="btn sm" id="covPick">Choose the Block folder…</button>
         <input type="file" id="covDir" webkitdirectory multiple hidden></div>
       <div id="covProg" class="muted"></div>
       ${d.people.some(p => p.uid === d.me) ? '<p><a href="#" id="covClear" class="muted">Remove my photos from this job</a></p>' : ''}` : ''}`;
@@ -293,7 +298,7 @@ function covRender() {
   if (!covState.canAdd) return;
   const drop = $('#covDrop');
   $('#covPick').onclick = () => $('#covDir').click();
-  $('#covDir').onchange = e => covAdd([...e.target.files]);
+  $('#covDir').onchange = e => { const fs = [...e.target.files]; fs.folder = (fs[0]?.webkitRelativePath || '').split('/')[0]; covAdd(fs); };
   drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = async e => { e.preventDefault(); drop.classList.remove('over'); covAdd(await covFilesFromDrop(e.dataTransfer)); };
@@ -302,8 +307,18 @@ function covRender() {
     await fetch('api/coverage/' + encodeURIComponent(covState.key) + '/clear', { method: 'POST' }); covLoad(); });
 }
 const confirmBox = (msg) => window.confirm(msg);
+// After checking a "Block 14" folder, zoom the map to Block 14.
+function covZoomTo(folder) {
+  const name = /block/i.test(folder) ? covBlockName(folder) : '';
+  const i = name ? (covState.data.blocks || []).findIndex(b => covBlockName(b.name) === name) : -1;
+  if (i < 0) return;
+  const b = covState.data.blocks[i];
+  covMap.fitBounds(L.polygon(b.polys.map(p => p.map(r => r.map(([lo, la]) => [la, lo])))).getBounds(), { padding: [20, 20] });
+  document.querySelector(`#cov [data-blk="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+}
 
 async function covAdd(files) {
+  const folder = files.folder || '';
   const all = files.filter(f => /\.jpe?g$/i.test(f.name)), prog = $('#covProg');
   if (!all.length) { prog.textContent = 'No photos (.JPG) found in that folder.'; return; }
   // Photos already sent are skipped without being opened, so checking the whole card or job folder again
@@ -311,7 +326,7 @@ async function covAdd(files) {
   const mine = covState.data.people.find(p => p.uid === covState.data.me);
   const have = new Set((mine?.images || []).map(i => i.f).filter(f => /^DJI_\d{14}_/i.test(f)));
   const jpgs = all.filter(f => !have.has(f.name)), already = all.length - jpgs.length;
-  if (!jpgs.length) { prog.textContent = `All ${num(all.length)} photos in that folder are already in the coverage map.`; return; }
+  if (!jpgs.length) { covZoomTo(folder); prog.textContent = `All ${num(all.length)} photos in that folder are already in the coverage map.`; return; }
   const out = [], skip = { nogps: 0, bad: 0 }; let done = 0, i = 0, held = null; const t0 = Date.now();
   const show = () => { prog.textContent = `Reading new photos: ${num(done)} of ${num(jpgs.length)}…` + (already ? ` (${num(already)} already in, skipped)` : ''); };
   show(); const tick = setInterval(show, 300);
@@ -329,6 +344,7 @@ async function covAdd(files) {
   }
   const secs = Math.round((Date.now() - t0) / 1000);
   await covLoad();
+  covZoomTo(folder);
   const meNow = covState.data.people.find(p => p.uid === covState.data.me);
   $('#covProg').innerHTML = esc(`Done: ${num(out.length)} new photos read and sent in ${secs} s.` + (already ? ` ${num(already)} were already in.` : '') + (skip.nogps ? ` ${num(skip.nogps)} had no GPS position.` : '') + (skip.bad ? ` ${num(skip.bad)} couldn’t be read.` : ''))
     + (held != null ? `<br><b>The logbook now holds ${num(held)} of your photos for this job.</b>` : '')
